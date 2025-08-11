@@ -1,45 +1,45 @@
-// import { useEffect, useState } from 'react'
-// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-// import { Button } from "@/components/ui/button"
-// import { Badge } from "@/components/ui/badge"
-// import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-// import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-// import { getOrderById, Order } from "@/api/orders"
-// import { getPurchaseOrdersByOrderId, PurchaseOrder, updatePurchaseOrder } from "@/api/purchaseOrders"
-// import { getInvoicesByPurchaseId, Invoice, updateInvoice } from "@/api/invoices"
-// import { ImagePlaceholder } from "@/components/ImagePlaceholder"
-// import { WorkflowProgress } from "@/components/WorkflowProgress"
-// import { useToast } from "@/hooks/useToast"
-// import { useNavigate, useParams } from "react-router-dom"
-// import {
-//   ArrowLeft,
-//   Plus,
-//   FileText,
-//   Truck,
-//   ShoppingCart,
-//   Download,
-//   Eye,
-//   Calendar,
-//   DollarSign,
-//   User,
-//   Building2,
-//   Save,
-//   X,
-//   Edit,
-//   Loader2
-// } from "lucide-react"
-// import {
-//   exportOrderOverviewToExcel,
-//   exportOrderOverviewToPDF,
-//   exportPurchaseOrdersToExcel,
-//   exportPurchaseOrdersToPDF,
-//   exportInvoicesToExcel,
-//   exportInvoicesToPDF,
-//   exportShippingToExcel,
-//   exportShippingToPDF
-// } from "@/utils/exportUtils"
-// import { getShippingInvoice, getShippingInvoicesByOrderId, updateShippingInvoice } from '@/api/shipping'
-// import { useInvoiceStore } from './../../store/invoiceStore';
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { getOrderById, Order } from "@/api/orders"
+import { getPurchaseOrdersByOrderId, PurchaseOrder, updatePurchaseOrder } from "@/api/purchaseOrders"
+import { getInvoicesByPurchaseId, Invoice, updateInvoice } from "@/api/invoices"
+import { ImagePlaceholder } from "@/components/ImagePlaceholder"
+import { WorkflowProgress } from "@/components/WorkflowProgress"
+import { useToast } from "@/hooks/useToast"
+import { useNavigate, useParams } from "react-router-dom"
+import {
+  ArrowLeft,
+  Plus,
+  FileText,
+  Truck,
+  ShoppingCart,
+  Download,
+  Eye,
+  Calendar,
+  DollarSign,
+  User,
+  Building2,
+  Save,
+  X,
+  Edit,
+  Loader2
+} from "lucide-react"
+import {
+  exportOrderOverviewToExcel,
+  exportOrderOverviewToPDF,
+  exportPurchaseOrdersToExcel,
+  exportPurchaseOrdersToPDF,
+  exportInvoicesToExcel,
+  exportInvoicesToPDF,
+  exportShippingToExcel,
+  exportShippingToPDF
+} from "@/utils/exportUtils"
+import { getShippingInvoice, getShippingInvoicesByOrderId, updateShippingInvoice } from '@/api/shipping'
+import { useInvoiceStore } from './../../store/invoiceStore';
 
 export function OrderDetail() {
   const [isSavingInvoice, setIsSavingInvoice] = useState(false);

@@ -22,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ImagePlaceholder } from "@/components/ImagePlaceholder"
-import { Client, updateClient } from '@/api/clients'
+import {  getClientById, updateClient } from '@/api/clients'
 
 export function CreateInvoice() {
   const { id: orderId } = useParams<{ id: string }>()
@@ -36,10 +36,11 @@ export function CreateInvoice() {
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
   const [itemPrices, setItemPrices] = useState<Record<string, number>>({})
   const [invoiceDate, setInvoiceDate] = useState<Date>(new Date())
-const [client, setClient] = useState<Client | null>(null);
   // const [InvoiceBalance, SetInvoiceBalance] = useState<number>()
   const [dueDate, setDueDate] = useState<Date>()
   const [loading, setLoading] = useState(false)
+    const [Clientdata, Setclientdata] = useState()
+
 
   // Form handling
   const { register, handleSubmit, setValue, watch } = useForm<CreateInvoiceData>({
@@ -88,7 +89,14 @@ useEffect(() => {
         const response = await getPurchaseOrdersByOrderId(orderId)
         const responseOrder = await getOrderById(orderId)
         console.log(`responseOrder`,responseOrder.data.order)
-        setClient(responseOrder.data.order.clientId._id)
+        const clientId = responseOrder.data.order.clientId._id
+        const responseclientdata = await  getClientById(clientId);
+
+        Setclientdata(responseclientdata.client)
+
+        console.log(`responseclientdata`, responseclientdata.client)
+        
+        
         SetInvoiceBalance(responseOrder.data.order.clientId.InvoiceBalance)
         console.log(`InvoiceBalance`, responseOrder.data.order.clientId)
         if (response.purchaseOrder?.data?.purchaseOrders) {
@@ -215,9 +223,10 @@ const onSubmit = async (data: CreateInvoiceData) => {
     
     // Update client's TotalInvoice and InvoiceBalance
     const { total } = calculateTotals();
-    if (client) {
-      await updateClient(client, { 
-        InvoiceBalance:  total // أو يمكنك حساب الرصيد بناء على الفواتير السابقة
+    const otalInvoiceBalance = total + Clientdata!.InvoiceBalance
+    if (Clientdata) {
+      await updateClient(Clientdata!._id, { 
+        InvoiceBalance:  otalInvoiceBalance // أو يمكنك حساب الرصيد بناء على الفواتير السابقة
       });
     }
 

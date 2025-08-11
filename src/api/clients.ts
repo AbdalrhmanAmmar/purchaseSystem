@@ -115,7 +115,7 @@ export const getClientById = async (clientId: string) => {
 // Response: { success: boolean, client: Client, message: string }
 export const updateClient = async (clientId: string, data: UpdateClientData) => {
   try {
-    const response = await api.put(`/api/clients/${clientId}`, data);
+    const response = await api.patch(`/api/clients/${clientId}`, data);
     return response.data;
   } catch (error: any) {
     throw new Error(error?.response?.data?.message || error.message);

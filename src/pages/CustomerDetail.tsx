@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getCustomerStatement, CustomerStatement } from "@/api/clients"
+import { getCustomerStatement, CustomerStatement, getClientById } from "@/api/clients"
 import { useToast } from "@/hooks/useToast"
 import { useNavigate, useParams } from "react-router-dom"
 import {
@@ -28,6 +28,7 @@ import {
 export function CustomerDetail() {
   const { id } = useParams<{ id: string }>()
   const [statement, setStatement] = useState<CustomerStatement | null>(null)
+  const [Clientdata, Setclientdata] = useState()
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -39,6 +40,8 @@ export function CustomerDetail() {
       try {
         console.log('Fetching customer statement...')
         const response = await getCustomerStatement(id) as { statement: CustomerStatement }
+        const responsedetails = await getClientById(id);
+        Setclientdata(responsedetails.client)
         setStatement(response.statement)
         console.log('Customer statement loaded successfully')
       } catch (error) {
@@ -184,7 +187,7 @@ export function CustomerDetail() {
             <FileText className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-slate-900">${statement.totalInvoiced.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-slate-900">${Clientdata!.InvoiceBalance}</div>
             <p className="text-xs text-slate-500 mt-1">All time</p>
           </CardContent>
         </Card>
@@ -195,7 +198,7 @@ export function CustomerDetail() {
             <CreditCard className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">${statement.totalPaid.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-green-600">${Clientdata!.Balance}</div>
             <p className="text-xs text-slate-500 mt-1">Received payments</p>
           </CardContent>
         </Card>
@@ -207,7 +210,7 @@ export function CustomerDetail() {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${statement.outstandingBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              ${Math.abs(statement.outstandingBalance).toLocaleString()}
+              ${Math.abs(Clientdata!.InvoiceBalance - Clientdata!.Balance).toLocaleString()}
             </div>
             <p className="text-xs text-slate-500 mt-1">
               {statement.outstandingBalance > 0 ? 'Amount due' : 'Credit balance'}
