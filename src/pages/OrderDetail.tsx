@@ -293,9 +293,12 @@ const handleSaveShipping = async () => {
   //edit purchase
 const handleEditPurchaseOrder = (purchaseOrder: PurchaseOrder) => {
   setEditingPurchaseOrder(purchaseOrder);
-  setEditFormData({
+ setEditFormData({
     ...purchaseOrder,
-    items: [...purchaseOrder.items]
+    items: purchaseOrder.items.map(item => ({
+      ...item,
+      photo: item.photo || '' // تأكد من وجود حقل الصورة
+    }))
   });
 };
 const [isSaving, setIsSaving] = useState(false);
@@ -304,20 +307,21 @@ const handleSavePurchaseOrder = async () => {
   if (!editingPurchaseOrder) return;
 
   try {
-        setIsSaving(true);
+    setIsSaving(true);
 
-    // تحضير البيانات للإرسال
+    // تحضير البيانات للإرسال مع الصور
     const updateData = {
       ...editFormData,
       items: editFormData.items?.map(item => ({
         description: item.description,
         quantity: Number(item.quantity) || 0,
         unitPrice: Number(item.unitPrice) || 0,
-        photo: item.photo || '',
+        photo: item.photo || '', // تأكد من إرسال الصورة
+        total: Number(item.quantity) * Number(item.unitPrice) // احسب المجموع
       }))
     };
 
-    // إزالة الحقول التي لا يجب تحديثها
+    // إزالة الحقول غير الضرورية
     delete updateData.totalAmount;
     delete updateData.remainingAmount;
     delete updateData._id;
@@ -328,32 +332,59 @@ const handleSavePurchaseOrder = async () => {
     );
 
     if (response) {
-      // تحديث الحالة مع البيانات الجديدة من الباك إند
       setPurchaseOrders(prev => prev.map(po => 
         po._id === editingPurchaseOrder._id ? response : po
       ));
       
       toast({
-        title: "تم التحديث",
-        description: "تم تحديث أمر الشراء بنجاح",
+        title: "Success",
+        description: "Purchase order updated successfully",
         variant: "default",
       });
       
-      // إغلاق نموذج التحرير
       setEditingPurchaseOrder(null);
       setEditFormData({});
     }
   } catch (error) {
     console.error('Error updating purchase order:', error);
     toast({
-      title: "خطأ",
-      description: error instanceof Error ? error.message : "فشل في تحديث أمر الشراء",
+      title: "Error",
+      description: error instanceof Error ? error.message : "Failed to update purchase order",
       variant: "destructive",
     });
+  } finally {
+    setIsSaving(false);
   }
-  finally{
-        setIsSaving(false);
+};
+const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
 
+  try {
+    // عرض الصورة مباشرة باستخدام FileReader (بدون رفع للخادم)
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        const updatedItems = [...(editFormData.items || [])];
+        updatedItems[index] = {
+          ...updatedItems[index],
+          photo: event.target.result as string
+        };
+
+        setEditFormData({
+          ...editFormData,
+          items: updatedItems
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    toast({
+      title: "Error",
+      description: "Failed to upload image",
+      variant: "destructive",
+    });
   }
 };
 
@@ -503,8 +534,9 @@ const handleSaveInvoice = async () => {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Order #{id}</h1>
-            <p className="text-slate-600">{order.projectName}</p>
+<h1 className="text-2xl font-bold text-slate-900">
+  OR #{String(order.orderItem).padStart(3, '0')}
+</h1>            <p className="text-slate-600">{order.projectName}</p>
           </div>
         </div>
         <div className="flex space-x-2">
@@ -660,7 +692,7 @@ const handleSaveInvoice = async () => {
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <div>
-                            <CardTitle className="text-lg">PO #{po._id}</CardTitle>
+                            <CardTitle className="text-lg">PO #{String(order.orderItem).padStart(3, '0')}</CardTitle>
                             <CardDescription>{po.supplierName}</CardDescription>
                           </div>
                           <div className="flex items-center space-x-2">
@@ -1098,6 +1130,7 @@ const handleSaveInvoice = async () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                         <TableHead>Photo</TableHead>
                         <TableHead>Description</TableHead>
                         <TableHead className="w-24">Qty</TableHead>
                         <TableHead className="w-32">Unit Price</TableHead>
@@ -1107,6 +1140,50 @@ const handleSaveInvoice = async () => {
                     <TableBody>
                       {editFormData.items?.map((item, index) => (
                         <TableRow key={index}>
+<TableCell>
+  <div className="flex flex-col items-center">
+    <label className="cursor-pointer">
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => handleImageUpload(e, index)}
+        className="hidden" // إخفاء عنصر input الأصلي
+      />
+      {item.photo ? (
+        <ImagePlaceholder
+          src={item.photo}
+          alt="Product"
+          className="w-16 h-16 rounded object-cover hover:opacity-80 transition-opacity"
+          fallbackText="Click to upload"
+        />
+      ) : (
+        <div className="w-16 h-16 rounded border-2 border-dashed border-gray-300 flex items-center justify-center hover:bg-gray-50">
+          <span className="text-xs text-gray-500">Click to upload</span>
+        </div>
+      )}
+    </label>
+    {item.photo && (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          const updatedItems = [...editFormData.items];
+          updatedItems[index] = {
+            ...updatedItems[index],
+            photo: ''
+          };
+          setEditFormData({
+            ...editFormData,
+            items: updatedItems
+          });
+        }}
+        className="mt-1 text-xs text-red-500 hover:text-red-700"
+      >
+        Remove
+      </button>
+    )}
+  </div>
+</TableCell>
+
                           <TableCell>
                             <input
                               type="text"

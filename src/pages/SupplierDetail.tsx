@@ -6,8 +6,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
-import { getSupplierStatement, deleteSupplier, SupplierStatement } from "@/api/suppliers"
-import { useToast } from "@/hooks/useToast"
 import { useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
@@ -23,64 +21,150 @@ import {
   CreditCard,
   Receipt,
   Search,
-  Filter,
   Trash2
 } from "lucide-react"
+import { getSupplierById } from '@/api/suppliers'
+import { useToast } from '@/hooks/useToast'
+
+// Static data
+const staticSupplierData = {
+  supplier: {
+    supplierName: "Tech Supplies Inc.",
+    Balance: 1500,
+    PurchaseBalance: 8500,
+    _id: "689be3242c5eee8345643315",
+    createdAt: "2025-08-13T00:58:12.065Z",
+    updatedAt: "2025-08-15T10:22:45.120Z"
+  },
+  totalPurchased: 12500,
+  totalPaid: 11000,
+  outstandingBalance: 1500,
+  transactions: [
+    {
+      _id: "1",
+      date: "2025-08-10T09:15:00.000Z",
+      type: "purchase_order",
+      description: "Laptop order - 50 units",
+      reference: "PO-2025-0810",
+      amount: 5000,
+      status: "completed"
+    },
+    {
+      _id: "2",
+      date: "2025-08-12T14:30:00.000Z",
+      type: "payment",
+      description: "Payment for invoice #INV-2025-0810",
+      reference: "PAY-2025-0812",
+      amount: -3000,
+      status: "confirmed"
+    },
+    {
+      _id: "3",
+      date: "2025-08-14T11:45:00.000Z",
+      type: "purchase_order",
+      description: "Monitor order - 30 units",
+      reference: "PO-2025-0814",
+      amount: 3500,
+      status: "pending"
+    }
+  ],
+  purchaseOrders: [
+    {
+      _id: "PO-2025-0810",
+      orderId: "PO-2025-0810",
+      projectName: "Office Equipment Upgrade",
+      status: "completed",
+      totalAmount: 5000,
+      paymentTerms: "Net 30",
+      deliveryDate: "2025-08-18T00:00:00.000Z"
+    },
+    {
+      _id: "PO-2025-0814",
+      orderId: "PO-2025-0814",
+      projectName: "Conference Room Setup",
+      status: "pending",
+      totalAmount: 3500,
+      paymentTerms: "Net 15",
+      deliveryDate: "2025-08-20T00:00:00.000Z"
+    }
+  ],
+  shipments: [
+    {
+      _id: "SH-2025-0810",
+      orderId: "PO-2025-0810",
+      trackingNumber: "TRK123456789",
+      shippingCompany: "Fast Delivery Inc.",
+      status: "delivered",
+      expectedDelivery: "2025-08-18T00:00:00.000Z",
+      totalCost: 250
+    },
+    {
+      _id: "SH-2025-0814",
+      orderId: "PO-2025-0814",
+      trackingNumber: "TRK987654321",
+      shippingCompany: "Quick Ship LLC",
+      status: "in_transit",
+      expectedDelivery: "2025-08-20T00:00:00.000Z",
+      totalCost: 180
+    }
+  ]
+}
+
+interface ISupplier{
+  supplierName:string,
+  Balance:number,
+  PurchaseBalance:number
+}
 
 export function SupplierDetail() {
-  const { id } = useParams<{ id: string }>()
-  const [statement, setStatement] = useState<SupplierStatement | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [deleting, setDeleting] = useState(false)
+  const {id} = useParams()
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
-  const { toast } = useToast()
+  const [deleting, setDeleting] = useState(false)
+  const [supplierdata, setsupplierdata] = useState<ISupplier>({});
+const [loading, setLoading] = useState(true);
+const { toast } = useToast();
   const navigate = useNavigate()
 
-  useEffect(() => {
-    const fetchSupplierStatement = async () => {
-      if (!id) return
+  // Use static data instead of API call
+  const statement = staticSupplierData
 
-      try {
-        console.log('Fetching supplier statement...')
-        const response = await getSupplierStatement(id) as { statement: SupplierStatement }
-        setStatement(response.statement)
-        console.log('Supplier statement loaded successfully')
-      } catch (error) {
-        console.error('Error fetching supplier statement:', error)
-        toast({
-          title: "Error",
-          description: "Failed to load supplier statement",
-          variant: "destructive",
-        })
-      } finally {
-        setLoading(false)
+useEffect(() => {
+  const fetchSupplier = async () => {
+    try {
+      const response = await getSupplierById(id);
+      console.log('API Response:', response);
+      
+      if (response.success) {
+        setsupplierdata(response.supplier);
+      } else {
+        throw new Error("Failed to fetch supplier data");
       }
+    } catch (error) {
+      console.error('Error fetching supplier:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load supplier data",
+        variant: "destructive",
+      });
     }
+  };
 
-    fetchSupplierStatement()
-  }, [id, toast])
+  if (id) {
+    fetchSupplier();
+  }
+}, [id, toast]);
+  
 
   const handleDeleteSupplier = async () => {
-    if (!id || !statement) return
-
     setDeleting(true)
     try {
-      console.log('Deleting supplier...')
-      await deleteSupplier(id)
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 1000))
       console.log('Supplier deleted successfully')
-      toast({
-        title: "Success",
-        description: "Supplier deleted successfully",
-      })
       navigate('/suppliers')
     } catch (error) {
       console.error('Error deleting supplier:', error)
-      toast({
-        title: "Error",
-        description: "Failed to delete supplier",
-        variant: "destructive",
-      })
     } finally {
       setDeleting(false)
     }
@@ -116,67 +200,24 @@ export function SupplierDetail() {
     }
   }
 
-  const filteredTransactions = statement?.transactions.filter(transaction => {
+  const filteredTransactions = statement.transactions.filter(transaction => {
     const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (transaction.reference && transaction.reference.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesType = filterType === 'all' || transaction.type === filterType
     return matchesSearch && matchesType
-  }) || []
+  })
 
-  const filteredPurchaseOrders = statement?.purchaseOrders.filter(po => {
+  const filteredPurchaseOrders = statement.purchaseOrders.filter(po => {
     const matchesSearch = po.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          po._id.toLowerCase().includes(searchTerm.toLowerCase())
     return matchesSearch
-  }) || []
+  })
 
-  const filteredShipments = statement?.shipments.filter(shipment => {
+  const filteredShipments = statement.shipments.filter(shipment => {
     const matchesSearch = shipment.trackingNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          shipment.shippingCompany.toLowerCase().includes(searchTerm.toLowerCase())
     return matchesSearch
-  }) || []
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center space-x-4">
-          <div className="h-8 w-8 bg-slate-200 rounded animate-pulse"></div>
-          <div className="h-8 bg-slate-200 rounded w-48 animate-pulse"></div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardContent className="p-6">
-                <div className="h-20 bg-slate-200 rounded"></div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  if (!statement) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center space-x-4">
-          <Button variant="ghost" onClick={() => navigate('/suppliers')} className="p-2">
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Supplier Not Found</h1>
-        </div>
-        <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
-          <CardContent className="text-center py-12">
-            <Factory className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">Supplier not found</h3>
-            <p className="text-slate-600 mb-4">The requested supplier could not be found.</p>
-            <Button onClick={() => navigate('/suppliers')} className="bg-gradient-to-r from-blue-500 to-indigo-600">
-              Back to Suppliers
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+  })
 
   return (
     <div className="space-y-6">
@@ -187,7 +228,7 @@ export function SupplierDetail() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{statement.supplier.supplierName}</h1>
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{supplierdata.supplierName}</h1>
             <p className="text-slate-600 dark:text-slate-400">Supplier Statement & Account Overview</p>
           </div>
         </div>
@@ -202,7 +243,7 @@ export function SupplierDetail() {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Supplier</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete "{statement.supplier.supplierName}"? This action cannot be undone.
+                Are you sure you want to delete "{supplierdata.supplierName}"? This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -227,7 +268,7 @@ export function SupplierDetail() {
               <Factory className="w-8 h-8 text-white" />
             </div>
             <div className="flex-1">
-              <CardTitle className="text-2xl text-slate-900">{statement.supplier.supplierName}</CardTitle>
+              <CardTitle className="text-2xl text-slate-900">{supplierdata.supplierName}</CardTitle>
               <CardDescription className="text-lg">Supplier Account</CardDescription>
             </div>
           </div>
@@ -242,7 +283,7 @@ export function SupplierDetail() {
             <ShoppingCart className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-slate-900">${statement.totalPurchased.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-slate-900">${supplierdata.PurchaseBalance}</div>
             <p className="text-xs text-slate-500 mt-1">All time</p>
           </CardContent>
         </Card>
@@ -253,7 +294,7 @@ export function SupplierDetail() {
             <CreditCard className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">${statement.totalPaid.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-green-600">${supplierdata.Balance}</div>
             <p className="text-xs text-slate-500 mt-1">Payments made</p>
           </CardContent>
         </Card>
@@ -265,7 +306,7 @@ export function SupplierDetail() {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${statement.outstandingBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              ${Math.abs(statement.outstandingBalance).toLocaleString()}
+              ${Math.abs(supplierdata.PurchaseBalance - supplierdata.Balance)}
             </div>
             <p className="text-xs text-slate-500 mt-1">
               {statement.outstandingBalance > 0 ? 'Amount owed' : 'Credit balance'}

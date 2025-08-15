@@ -11,7 +11,7 @@ const localApi = axios.create({
     'Accept': 'application/json'
   },
   withCredentials: true, // لإرسال الكوكيز إذا كنت تستخدمها
-  timeout: 10000, // 10 ثانية كحد أقصى للانتظار
+  timeout: 100000, // 10 ثانية كحد أقصى للانتظار
   validateStatus: function (status) {
     return status >= 200 && status < 500; // تقبل كل الأكواد ما عدا 500+
   }

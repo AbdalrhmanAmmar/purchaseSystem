@@ -4,12 +4,13 @@ import { useToast } from "@/hooks/useToast"
 import { useNavigate, useParams } from "react-router-dom"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
-import { ArrowLeft, CalendarIcon, FileText, Save } from "lucide-react"
+import { ArrowLeft, CalendarIcon, FileText, Save, Edit, X, Check } from "lucide-react"
 
 // API functions
 import { createInvoice, CreateInvoiceData, InvoiceItem } from "@/api/invoices"
 import { getPurchaseOrdersByOrderId, PurchaseOrder } from "@/api/purchaseOrders"
-import { getOrderById, Order } from '@/api/orders'
+import { getOrderById, Order, updateOrder } from '@/api/orders'
+import { getClientById, updateClient } from '@/api/clients'
 
 // UI Components
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,7 +23,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ImagePlaceholder } from "@/components/ImagePlaceholder"
-import {  getClientById, updateClient } from '@/api/clients'
 
 export function CreateInvoice() {
   const { id: orderId } = useParams<{ id: string }>()
@@ -36,11 +36,11 @@ export function CreateInvoice() {
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
   const [itemPrices, setItemPrices] = useState<Record<string, number>>({})
   const [invoiceDate, setInvoiceDate] = useState<Date>(new Date())
-  // const [InvoiceBalance, SetInvoiceBalance] = useState<number>()
   const [dueDate, setDueDate] = useState<Date>()
   const [loading, setLoading] = useState(false)
-    const [Clientdata, Setclientdata] = useState()
-
+  const [clientData, setClientData] = useState<any>()
+  const [editingCommission, setEditingCommission] = useState(false)
+  const [tempCommissionRate, setTempCommissionRate] = useState(0)
 
   // Form handling
   const { register, handleSubmit, setValue, watch } = useForm<CreateInvoiceData>({
@@ -50,90 +50,74 @@ export function CreateInvoice() {
   })
 
   // Fetch order data
-useEffect(() => {
-  const fetchData = async () => {
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const orderResponse = await getOrderById(orderId);
+        if (!orderResponse.data) {
+          throw new Error('Order data not found');
+        }
+        setOrder(orderResponse.data);
+        setTempCommissionRate(orderResponse.data.order.commissionRate)
+        
+        const poResponse = await getPurchaseOrdersByOrderId(orderId);
+        if (!poResponse.purchaseOrder?.data?.purchaseOrders) {
+          throw new Error('Purchase orders not found');
+        }
+        setPurchaseOrders(poResponse.purchaseOrder.data.purchaseOrders);
+        
+        const clientId = orderResponse.data.order.clientId._id
+        const clientResponse = await getClientById(clientId);
+        setClientData(clientResponse.client)
+        
+      } catch (error) {
+        toast({
+          title: "Loading Error",
+          description: error.message,
+          variant: "destructive"
+        });
+        navigate('/orders');
+      }
+    };
+    
+    if (orderId) fetchData();
+  }, [orderId]);
+
+  // Handle commission rate update
+  const handleUpdateCommissionRate = async () => {
+    if (!orderId) return;
+    
     try {
-      // تحميل بيانات الطلب
-      const orderResponse = await getOrderById(orderId);
-      if (!orderResponse.data) {
-        throw new Error('لم يتم العثور على بيانات الطلب');
-      }
-      setOrder(orderResponse.data);
+      setLoading(true);
+      await updateOrder(orderId, { commissionRate: tempCommissionRate });
       
-      // تحميل أوامر الشراء
-      const poResponse = await getPurchaseOrdersByOrderId(orderId);
-      if (!poResponse.purchaseOrder?.data?.purchaseOrders) {
-        throw new Error('لم يتم العثور على أوامر الشراء');
+      // Update local state
+      if (order) {
+        setOrder({
+          ...order,
+          order: {
+            ...order.order,
+            commissionRate: tempCommissionRate
+          }
+        });
       }
-      setPurchaseOrders(poResponse.purchaseOrder.data.purchaseOrders);
       
+      toast({
+        title: "Success",
+        description: "Commission rate updated successfully",
+      });
+      
+      setEditingCommission(false);
     } catch (error) {
       toast({
-        title: "خطأ في التحميل",
-        description: error.message,
+        title: "Error",
+        description: "Failed to update commission rate",
         variant: "destructive"
       });
-      navigate('/orders'); // العودة إلى صفحة الطلبات في حالة الخطأ
+    } finally {
+      setLoading(false);
     }
   };
-  
-  if (orderId) fetchData();
-}, [orderId]);
-
-  // Fetch purchase orders
-  useEffect(() => {
-    const fetchPurchaseOrders = async () => {
-      if (!orderId) return
-      
-      try {
-        const response = await getPurchaseOrdersByOrderId(orderId)
-        const responseOrder = await getOrderById(orderId)
-        console.log(`responseOrder`,responseOrder.data.order)
-        const clientId = responseOrder.data.order.clientId._id
-        const responseclientdata = await  getClientById(clientId);
-
-        Setclientdata(responseclientdata.client)
-
-        console.log(`responseclientdata`, responseclientdata.client)
-        
-        
-        SetInvoiceBalance(responseOrder.data.order.clientId.InvoiceBalance)
-        console.log(`InvoiceBalance`, responseOrder.data.order.clientId)
-        if (response.purchaseOrder?.data?.purchaseOrders) {
-          setPurchaseOrders(response.purchaseOrder.data.purchaseOrders)
-          console.log('response', response.purchaseOrder)
-          
-          // Initialize quantities, prices and selection state
-          const initialQuantities: Record<string, number> = {}
-          const initialPrices: Record<string, number> = {}
-          const initialSelected: Record<string, boolean> = {}
-          
-          response.purchaseOrder.data.purchaseOrders.forEach(po => {
-            po.items?.forEach(item => {
-              const key = item._id || Math.random().toString()
-              initialQuantities[key] = item.quantity
-              initialPrices[key] = item.unitPrice
-              initialSelected[key] = true
-            })
-          })
-          
-          setItemQuantities(initialQuantities)
-          setItemPrices(initialPrices)
-          setSelectedItems(initialSelected)
-        }
-      } catch (error) {
-        toast({ 
-          title: "Error", 
-          description: "Failed to load purchase orders", 
-          variant: "destructive" 
-        })
-      }
-    }
-    
-    fetchPurchaseOrders()
-  }, [orderId, toast])
-
-
 
   // Item selection handlers
   const handleItemSelection = (key: string, checked: boolean) => {
@@ -183,80 +167,78 @@ useEffect(() => {
   }
 
   // Form submission
-// Form submission
-const onSubmit = async (data: CreateInvoiceData) => {
-  if (!orderId || purchaseOrders.length === 0) return;
+  const onSubmit = async (data: CreateInvoiceData) => {
+    if (!orderId || purchaseOrders.length === 0) return;
 
-  const selectedInvoiceItems = getSelectedInvoiceItems();
-  
-  if (selectedInvoiceItems.length === 0) {
-    toast({
-      title: "Error",
-      description: "Please select at least one item for the invoice",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  if (!dueDate) {
-    toast({
-      title: "Error",
-      description: "Please select a due date",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  setLoading(true);
-  try {
-    const invoiceData: CreateInvoiceData = {
-      purchaseId: purchaseOrders[0]._id,
-      orderId,
-      dueDate: dueDate.toISOString(),
-      paymentTerms: data.paymentTerms,
-      items: selectedInvoiceItems,
-      commissionRate: order?.order.commissionRate || 5
-    };
-
-    // Create the invoice
-    const invoiceResponse = await createInvoice(invoiceData);
+    const selectedInvoiceItems = getSelectedInvoiceItems();
     
-    // Update client's TotalInvoice and InvoiceBalance
-    const { total } = calculateTotals();
-    const otalInvoiceBalance = total + Clientdata!.InvoiceBalance
-    if (Clientdata) {
-      await updateClient(Clientdata!._id, { 
-        InvoiceBalance:  otalInvoiceBalance // أو يمكنك حساب الرصيد بناء على الفواتير السابقة
+    if (selectedInvoiceItems.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please select at least one item for the invoice",
+        variant: "destructive",
       });
+      return;
     }
 
-    toast({
-      title: "Success",
-      description: "Invoice created successfully",
-    });
-    navigate(`/orders/${orderId}`);
-  } catch (error: any) {
-    console.error('Error creating invoice:', error);
-    toast({
-      title: "Error",
-      description: error instanceof Error ? error.message : "Failed to create invoice",
-      variant: "destructive",
-    });
-  } finally {
-    setLoading(false);
+    if (!dueDate) {
+      toast({
+        title: "Error",
+        description: "Please select a due date",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const invoiceData: CreateInvoiceData = {
+        purchaseId: purchaseOrders[0]._id,
+        orderId,
+        dueDate: dueDate.toISOString(),
+        paymentTerms: data.paymentTerms,
+        items: selectedInvoiceItems,
+        commissionRate: order?.order.commissionRate || 5
+      };
+
+      // Create the invoice
+      const invoiceResponse = await createInvoice(invoiceData);
+      
+      // Update client's TotalInvoice and InvoiceBalance
+      const { total } = calculateTotals();
+      const totalInvoiceBalance = total + (clientData?.InvoiceBalance || 0)
+      if (clientData) {
+        await updateClient(clientData._id, { 
+          InvoiceBalance: totalInvoiceBalance
+        });
+      }
+
+      toast({
+        title: "Success",
+        description: "Invoice created successfully",
+      });
+      navigate(`/orders/${orderId}`);
+    } catch (error: any) {
+      console.error('Error creating invoice:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create invoice",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   // Loading state
-// Loading state - جعلها أكثر وضوحاً
-if (!order || purchaseOrders.length === 0) {
-  return (
-    <div className="flex flex-col items-center justify-center h-screen">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-      <p className="text-lg text-gray-600">جاري تحميل بيانات الطلب وأوامر الشراء...</p>
-    </div>
-  )
-}
+  if (!order || purchaseOrders.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+        <p className="text-lg text-gray-600">Loading order and purchase orders data...</p>
+      </div>
+    )
+  }
 
   const { subtotal, commissionFee, total, commissionRate } = calculateTotals()
 
@@ -275,36 +257,260 @@ if (!order || purchaseOrders.length === 0) {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* Order Information */}
-        <OrderInfoCard 
-          orderId={orderId}
-          clientName={watch('clientName')}
-          commissionRate={watch('commissionRate')}
-        />
+        <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
+          <CardHeader>
+            <CardTitle className="text-slate-900">Order Information</CardTitle>
+            <CardDescription>Basic information for this sales invoice</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Order Item</Label>
+                <Input 
+                  value={`OR#${String(order?.order.orderItem).padStart(3, '0')}`} 
+                  disabled 
+                  className="bg-slate-50" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Client Name</Label>
+                <Input 
+                  value={order?.order.clientName} 
+                  disabled 
+                  className="bg-slate-50" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Commission Rate</Label>
+                <div className="flex items-center gap-2">
+                  {editingCommission ? (
+                    <>
+                      <Input
+                        type="number"
+                        value={tempCommissionRate}
+                        onChange={(e) => setTempCommissionRate(Number(e.target.value))}
+                        className="w-20"
+                      />
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => setEditingCommission(false)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        onClick={handleUpdateCommissionRate}
+                        disabled={loading}
+                      >
+                        <Check className="w-4 h-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Input 
+                        value={`${commissionRate}%`} 
+                        disabled 
+                        className="bg-slate-50 w-20" 
+                      />
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => setEditingCommission(true)}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Items from Purchase Orders */}
-        <ItemsTableCard 
-          purchaseOrders={purchaseOrders}
-          selectedItems={selectedItems}
-          itemQuantities={itemQuantities}
-          itemPrices={itemPrices}
-          onItemSelect={handleItemSelection}
-          onQuantityChange={handleQuantityChange}
-          onPriceChange={handlePriceChange}
-        />
+        <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
+          <CardHeader>
+            <CardTitle className="text-slate-900">Items from Purchase Orders</CardTitle>
+            <CardDescription>Select and modify items to include in the sales invoice</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {purchaseOrders.some(po => po.items && po.items.length > 0) ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">Select</TableHead>
+                      <TableHead className="w-20">Photo</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="w-24">Qty</TableHead>
+                      <TableHead className="w-32">Cost</TableHead>
+                      <TableHead className="w-32">Sell Price</TableHead>
+                      <TableHead className="w-32">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {purchaseOrders.map(po => (
+                      po.items?.map(item => {
+                        const key = item._id || Math.random().toString()
+                        const quantity = itemQuantities[key] || item.quantity
+                        const sellPrice = itemPrices[key] || item.unitPrice
+                        const itemTotal = quantity * sellPrice
+                        
+                        return (
+                          <TableRow key={key}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedItems[key] || false}
+                                onCheckedChange={(checked) => handleItemSelection(key, checked as boolean)}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <ImagePlaceholder
+                                src={item.photo}
+                                alt="Product"
+                                className="w-16 h-16 rounded"
+                                fallbackText="Product"
+                              />
+                            </TableCell>
+                            <TableCell>{item.description}</TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                min="1"
+                                value={quantity}
+                                onChange={(e) => handleQuantityChange(key, parseInt(e.target.value) || 0)}
+                                className="w-20"
+                              />
+                            </TableCell>
+                            <TableCell>${item.unitPrice.toFixed(2)}</TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={sellPrice}
+                                onChange={(e) => handlePriceChange(key, parseFloat(e.target.value) || 0)}
+                                className="w-24"
+                              />
+                            </TableCell>
+                            <TableCell>${itemTotal.toFixed(2)}</TableCell>
+                          </TableRow>
+                        )
+                      })
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <FileText className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+                <p className="text-slate-600 mb-4">No items found in the purchase orders.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Invoice Details */}
-        <InvoiceDetailsCard 
-          invoiceDate={invoiceDate}
-          dueDate={dueDate}
-          paymentTerms={watch('paymentTerms')}
-          onInvoiceDateChange={setInvoiceDate}
-          onDueDateChange={setDueDate}
-          onPaymentTermsChange={(value) => setValue('paymentTerms', value)}
-          subtotal={subtotal}
-          commissionFee={commissionFee}
-          total={total}
-          commissionRate={commissionRate}
-        />
+        <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
+          <CardHeader>
+            <CardTitle className="text-slate-900">Invoice Details</CardTitle>
+            <CardDescription>Set invoice dates and payment terms</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Invoice Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !invoiceDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {invoiceDate ? format(invoiceDate, "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 bg-white/95 backdrop-blur-xl">
+                    <Calendar
+                      mode="single"
+                      selected={invoiceDate}
+                      onSelect={setInvoiceDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Due Date *</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !dueDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dueDate ? format(dueDate, "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 bg-white/95 backdrop-blur-xl">
+                    <Calendar
+                      mode="single"
+                      selected={dueDate}
+                      onSelect={setDueDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="paymentTerms">Payment Terms</Label>
+                <Select 
+                  onValueChange={(value) => setValue('paymentTerms', value)} 
+                  value={watch('paymentTerms')}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select payment terms" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white/95 backdrop-blur-xl">
+                    <SelectItem value="Net 15">Net 15</SelectItem>
+                    <SelectItem value="Net 30">Net 30</SelectItem>
+                    <SelectItem value="Net 45">Net 45</SelectItem>
+                    <SelectItem value="Net 60">Net 60</SelectItem>
+                    <SelectItem value="Due on Receipt">Due on Receipt</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="border-t pt-6">
+              <div className="flex justify-end">
+                <div className="w-80 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Subtotal:</span>
+                    <span className="font-medium">${subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Commission Fee ({commissionRate}%):</span>
+                    <span className="font-medium">${commissionFee.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-semibold border-t pt-2">
+                    <span>Total:</span>
+                    <span>${total.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Actions */}
         <div className="flex justify-end space-x-4">
@@ -321,288 +527,6 @@ if (!order || purchaseOrders.length === 0) {
           </Button>
         </div>
       </form>
-    </div>
-  )
-}
-
-// Sub-components for better organization
-
-function OrderInfoCard({ orderId, clientName, commissionRate }: {
-  orderId: string | undefined;
-  clientName: string;
-  commissionRate: number;
-}) {
-  return (
-    <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
-      <CardHeader>
-        <CardTitle className="text-slate-900">Order Information</CardTitle>
-        <CardDescription>Basic information for this sales invoice</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label>Order Id</Label>
-            <Input value={`#${orderId}`} disabled className="bg-slate-50" />
-          </div>
-          <div className="space-y-2">
-            <Label>Client Name</Label>
-            <Input value={clientName} disabled className="bg-slate-50" />
-          </div>
-          <div className="space-y-2">
-            <Label>Commission Rate</Label>
-            <Input value={`${commissionRate}%`} disabled className="bg-slate-50" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function ItemsTableCard({
-  purchaseOrders,
-  selectedItems,
-  itemQuantities,
-  itemPrices,
-  onItemSelect,
-  onQuantityChange,
-  onPriceChange
-}: {
-  purchaseOrders: PurchaseOrder[];
-  selectedItems: Record<string, boolean>;
-  itemQuantities: Record<string, number>;
-  itemPrices: Record<string, number>;
-  onItemSelect: (key: string, checked: boolean) => void;
-  onQuantityChange: (key: string, quantity: number) => void;
-  onPriceChange: (key: string, price: number) => void;
-}) {
-  const hasItems = purchaseOrders.some(po => po.items && po.items.length > 0)
-
-  return (
-    <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
-      <CardHeader>
-        <CardTitle className="text-slate-900">Items from Purchase Orders</CardTitle>
-        <CardDescription>Select and modify items to include in the sales invoice</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {hasItems ? (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">Select</TableHead>
-                  <TableHead className="w-20">Photo</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="w-24">Qty</TableHead>
-                  <TableHead className="w-32">Cost</TableHead>
-                  <TableHead className="w-32">Sell Price</TableHead>
-                  <TableHead className="w-32">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {purchaseOrders.map(po => (
-                  po.items?.map(item => {
-                    const key = item._id || Math.random().toString()
-                    const quantity = itemQuantities[key] || item.quantity
-                    const sellPrice = itemPrices[key] || item.unitPrice
-                    const itemTotal = quantity * sellPrice
-                    
-                    return (
-                      <TableRow key={key}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedItems[key] || false}
-                            onCheckedChange={(checked) => onItemSelect(key, checked as boolean)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <ImagePlaceholder
-                            src={item.photo}
-                            alt="Product"
-                            className="w-16 h-16 rounded"
-                            fallbackText="Product"
-                          />
-                        </TableCell>
-                        <TableCell>{item.description}</TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min="1"
-                            value={quantity}
-                            onChange={(e) => onQuantityChange(key, parseInt(e.target.value) || 0)}
-                            className="w-20"
-                          />
-                        </TableCell>
-                        <TableCell>${item.unitPrice.toFixed(2)}</TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={sellPrice}
-                            onChange={(e) => onPriceChange(key, parseFloat(e.target.value) || 0)}
-                            className="w-24"
-                          />
-                        </TableCell>
-                        <TableCell>${itemTotal.toFixed(2)}</TableCell>
-                      </TableRow>
-                    )
-                  })
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          <div className="text-center py-8">
-            <FileText className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-            <p className="text-slate-600 mb-4">No items found in the purchase orders.</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function InvoiceDetailsCard({
-  invoiceDate,
-  dueDate,
-  paymentTerms,
-  onInvoiceDateChange,
-  onDueDateChange,
-  onPaymentTermsChange,
-  subtotal,
-  commissionFee,
-  total,
-  commissionRate
-}: {
-  invoiceDate: Date;
-  dueDate: Date | undefined;
-  paymentTerms: string;
-  onInvoiceDateChange: (date: Date) => void;
-  onDueDateChange: (date: Date | undefined) => void;
-  onPaymentTermsChange: (value: string) => void;
-  subtotal: number;
-  commissionFee: number;
-  total: number;
-  commissionRate: number;
-}) {
-  return (
-    <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
-      <CardHeader>
-        <CardTitle className="text-slate-900">Invoice Details</CardTitle>
-        <CardDescription>Set invoice dates and payment terms</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <DatePicker 
-            label="Invoice Date"
-            date={invoiceDate}
-            onSelect={onInvoiceDateChange}
-          />
-          
-          <DatePicker 
-            label="Due Date *"
-            date={dueDate}
-            onSelect={onDueDateChange}
-          />
-          
-          <div className="space-y-2">
-            <Label htmlFor="paymentTerms">Payment Terms</Label>
-            <Select 
-              onValueChange={onPaymentTermsChange} 
-              value={paymentTerms}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select payment terms" />
-              </SelectTrigger>
-              <SelectContent className="bg-white/95 backdrop-blur-xl">
-                <SelectItem value="Net 15">Net 15</SelectItem>
-                <SelectItem value="Net 30">Net 30</SelectItem>
-                <SelectItem value="Net 45">Net 45</SelectItem>
-                <SelectItem value="Net 60">Net 60</SelectItem>
-                <SelectItem value="Due on Receipt">Due on Receipt</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <InvoiceTotals 
-          subtotal={subtotal}
-          commissionFee={commissionFee}
-          total={total}
-          commissionRate={commissionRate}
-        />
-      </CardContent>
-    </Card>
-  )
-}
-
-function DatePicker({
-  label,
-  date,
-  onSelect
-}: {
-  label: string;
-  date: Date | undefined;
-  onSelect: (date: Date | undefined) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            className={cn(
-              "w-full justify-start text-left font-normal",
-              !date && "text-muted-foreground"
-            )}
-          >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {date ? format(date, "PPP") : "Pick a date"}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0 bg-white/95 backdrop-blur-xl">
-          <Calendar
-            mode="single"
-            selected={date}
-            onSelect={onSelect}
-            initialFocus
-          />
-        </PopoverContent>
-      </Popover>
-    </div>
-  )
-}
-
-function InvoiceTotals({
-  subtotal,
-  commissionFee,
-  total,
-  commissionRate
-}: {
-  subtotal: number;
-  commissionFee: number;
-  total: number;
-  commissionRate: number;
-}) {
-  return (
-    <div className="border-t pt-6">
-      <div className="flex justify-end">
-        <div className="w-80 space-y-2">
-          <div className="flex justify-between">
-            <span className="text-slate-600">Subtotal:</span>
-            <span className="font-medium">${subtotal.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600">Commission Fee ({commissionRate}%):</span>
-            <span className="font-medium">${commissionFee.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-lg font-semibold border-t pt-2">
-            <span>Total:</span>
-            <span>${total.toFixed(2)}</span>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

@@ -13,6 +13,7 @@ export interface CreateSupplierData {
 
 export interface UpdateSupplierData {
   supplierName: string;
+  PurchaseBalance: number; // تغيير من Balance إلى PurchaseBalance لتتوافق مع المودل
 }
 
 export interface SupplierTransaction {
@@ -105,7 +106,7 @@ export const getSupplierById = async (supplierId: string) => {
 // Response: { supplier: Supplier, message: string }
 export const updateSupplier = async (supplierId: string, data: UpdateSupplierData) => {
   try {
-    const response = await api.put(`/api/suppliers/${supplierId}`, data);
+    const response = await api.patch(`/api/suppliers/${supplierId}`, data);
     return response.data;
   } catch (error: any) {
     throw new Error(error?.response?.data?.message || error.message);

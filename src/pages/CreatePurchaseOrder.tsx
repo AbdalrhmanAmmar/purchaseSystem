@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { createPurchaseOrder, CreatePurchaseOrderData} from "@/api/purchaseOrders"
 import { getOrderById, Order } from "@/api/orders"
-import { getSuppliers, createSupplier, Supplier, CreateSupplierData } from "@/api/suppliers"
+import { getSuppliers, createSupplier, Supplier, CreateSupplierData, updateSupplier } from "@/api/suppliers"
 import { useToast } from "@/hooks/useToast"
 import { useNavigate, useParams } from "react-router-dom"
 import { ArrowLeft, Plus, CalendarIcon, Upload, X, Package, Save, Send, CreditCard } from "lucide-react"
@@ -37,6 +37,7 @@ export function CreatePurchaseOrder() {
   const [deliveryDate, setDeliveryDate] = useState<Date>()
   const [loading, setLoading] = useState(false)
   const [supplierDialogOpen, setSupplierDialogOpen] = useState(false)
+  const [PurchaseBalance, setPurchaseBalance] = useState()
   const [paymentData, setPaymentData] = useState<PaymentData>({
     makePayment: false,
     paymentType: 'down_payment',
@@ -70,6 +71,8 @@ useEffect(() => {
   });
 }, [JSON.stringify(watchedItems)]);
 
+console.log("supplierDialogOpen",supplierDialogOpen)
+
 useEffect(() => {
   const fetchData = async () => {
     if (!id) return;
@@ -87,6 +90,9 @@ useEffect(() => {
       // التعديل هنا - تحقق من الهيكل الفعلي للبيانات
       const orderData = orderResponse.data?.order || orderResponse.order || orderResponse.data;
       const suppliersData = suppliersResponse.suppliers || suppliersResponse.data?.suppliers;
+
+      console.log(`suppliersData`, suppliersResponse.suppliers[0].PurchaseBalance)
+      setPurchaseBalance(suppliersResponse.suppliers[0].PurchaseBalance)
 
       console.log( 'Order Data:', orderData.clientName);
 
@@ -227,6 +233,8 @@ const onSubmit = async (data: CreatePurchaseOrderData, sendToSupplier = false) =
   }
 
   setLoading(true);
+      console.log(selectedSupplier)
+
 
   try {
     const supplier = suppliers.find(s => s._id === selectedSupplier);
@@ -243,36 +251,56 @@ const onSubmit = async (data: CreatePurchaseOrderData, sendToSupplier = false) =
 
     const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
 
-
-
-const requestData: CreatePurchaseOrderData = {
-  ...data,
-  orderId: id,
-  supplierId: selectedSupplier,
-  supplierName: supplier?.supplierName || 'Unknown Supplier',
-  deliveryDate: deliveryDate.toISOString(),
-  totalAmount: totalAmount,
-  paidAmount: paymentData.makePayment ? paymentData.amount : 0,
-  ...(paymentData.makePayment && {
-    payment: {
-      paymentType: paymentData.paymentType,
-      amount: paymentData.amount,
-      paymentMethod: paymentData.paymentMethod,
-      reference: paymentData.reference || '',
-      description: paymentData.description || `${paymentData.paymentType.replace('_', ' ')} payment for PO`
+    const requestData: CreatePurchaseOrderData = {
+      ...data,
+      orderId: id,
+      supplierId: selectedSupplier,
+      supplierName: supplier?.supplierName || 'Unknown Supplier',
+      deliveryDate: deliveryDate.toISOString(),
+      totalAmount: totalAmount,
+      paidAmount: paymentData.makePayment ? paymentData.amount : 0,
+      ...(paymentData.makePayment && {
+        payment: {
+          paymentType: paymentData.paymentType,
+          amount: paymentData.amount,
+          paymentMethod: paymentData.paymentMethod,
+          reference: paymentData.reference || '',
+          description: paymentData.description || `${paymentData.paymentType.replace('_', ' ')} payment for PO`
+        }
+      })
     }
-  })
-}
-
 
     console.log('Submitting:', JSON.stringify(requestData, null, 2));
+    
+    // إنشاء أمر الشراء أولاً
     const response = await createPurchaseOrder(requestData);
+    
+    // تحديث رصيد المورد
+    const currentBalance = supplier.PurchaseBalance  || 0;
+    console.log(`supplier`, supplier)
+    const newBalance = currentBalance + totalAmount;
+    
+    await updateSupplier(selectedSupplier, { 
+      PurchaseBalance: newBalance,
+      lastPurchaseDate: new Date().toISOString(),
+      lastPurchaseAmount: totalAmount
+    });
+
+    // تحديث قائمة الموردين المحلية
+    setSuppliers(prev => prev.map(s => 
+      s._id === selectedSupplier ? { 
+        ...s, 
+        PurchaseBalance: newBalance,
+        lastPurchaseDate: new Date().toISOString(),
+        lastPurchaseAmount: totalAmount
+      } : s
+    ));
 
     toast({
       title: "Success",
       description: sendToSupplier 
-        ? "Purchase order sent to supplier" 
-        : "Purchase order saved",
+        ? "Purchase order sent to supplier and supplier balance updated" 
+        : "Purchase order saved and supplier balance updated",
     });
     
     navigate(`/orders/${id}`);
@@ -418,7 +446,7 @@ const PhotoUpload = ({
               <div className="space-y-2">
                 <Label>Master Order</Label>
 <Input 
-  value={`#${order?._id || 'N/A'} - ${order?.projectName || 'No project name'}`} 
+  value={`#${String(order.orderItem).padStart(3, '0')|| 'N/A'} - ${order?.projectName || 'No project name'}`} 
   disabled 
   className="bg-slate-50" 
 />              </div>
