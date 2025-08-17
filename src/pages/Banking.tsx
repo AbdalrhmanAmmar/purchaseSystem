@@ -63,6 +63,16 @@ export function Banking() {
   const [createAccountDialogOpen, setCreateAccountDialogOpen] = useState(false)
   const { toast } = useToast()
 
+  // Common form fields for both send and receive
+type MoneyFormFields = {
+  accountId?: string;
+  recipientType: 'customer' | 'supplier';
+  recipientId: string;
+  amount: number;
+  description: string;
+  paymentMethod: 'bank_transfer' | 'wire' | 'ach' | 'check' | 'cash';
+  reference?: string;
+};
   const { 
     register: registerSend, 
     handleSubmit: handleSendSubmit, 
@@ -70,18 +80,11 @@ export function Banking() {
     reset: resetSend, 
     setValue: setSendValue,
     watch: watchSend
-  } = useForm<{
-    accountId: string;
-    recipientType: 'customer' | 'supplier';
-    recipientId: string;
-    amount: number;
-    description: string;
-    paymentMethod?: 'bank_transfer' | 'wire' | 'ach' | 'check';
-    reference?: string;
-  }>({
+  } = useForm<MoneyFormFields>({
     defaultValues: {
       accountId: selectedAccount,
-      recipientType: 'customer'
+      recipientType: 'customer',
+      paymentMethod: 'bank_transfer'
     }
   })
 
@@ -90,17 +93,13 @@ export function Banking() {
     handleSubmit: handleReceiveSubmit, 
     formState: { errors: receiveErrors }, 
     reset: resetReceive, 
-    setValue: setReceiveValue 
-  } = useForm<{
-    accountId: string;
-    customerId: string;
-    amount: number;
-    description: string;
-    paymentMethod?: 'bank_transfer' | 'wire' | 'ach' | 'check' | 'cash';
-    reference?: string;
-  }>({
+    setValue: setReceiveValue,
+    watch: watchReceive
+  } = useForm<MoneyFormFields>({
     defaultValues: {
-      accountId: selectedAccount
+      accountId: selectedAccount,
+      recipientType: 'customer',
+      paymentMethod: 'bank_transfer'
     }
   })
 
@@ -126,7 +125,8 @@ export function Banking() {
     }
   })
 
-  const recipientType = watchSend('recipientType')
+  const sendRecipientType = watchSend('recipientType')
+  const receiveRecipientType = watchReceive('recipientType')
 
   useEffect(() => {
     const fetchData = async () => {
@@ -145,6 +145,7 @@ export function Banking() {
           getClients(),
           getSuppliers()
         ])
+        
 
         setAccounts(accountsResponse.accounts || [])
         setCustomerBalances(customerBalancesResponse.balances || [])
@@ -190,75 +191,97 @@ export function Banking() {
     fetchTransactions()
   }, [selectedAccount, toast])
 
-  const onSendMoney = async (data: any) => {
-    try {
-      const response = await sendMoney({ 
-        ...data, 
-        accountId: selectedAccount 
-      })
-      
-      setSendMoneyDialogOpen(false)
-      resetSend()
-      
-      // Refresh transactions
-      const transactionsResponse = await getBankTransactions(selectedAccount)
-      setTransactions(transactionsResponse.transactions || [])
-      
-      // Refresh balances based on recipient type
-      if (data.recipientType === 'customer') {
-        const balancesResponse = await getCustomerBalances()
-        setCustomerBalances(balancesResponse.balances || [])
-      } else {
-        const balancesResponse = await getSupplierBalances()
-        setSupplierBalances(balancesResponse.balances || [])
-      }
-
-      toast({
-        title: "Success",
-        description: response.message || "Payment sent successfully",
-      })
-    } catch (error: any) {
-      console.error('Error sending money:', error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to send money",
-        variant: "destructive",
-      })
+const onSendMoney = async (data: MoneyFormFields) => {
+  try {
+    if (!selectedAccount) {
+      throw new Error("Please select a bank account");
     }
-  }
 
-  const onReceiveMoney = async (data: any) => {
-    try {
-      const response = await receiveMoney({ 
-        ...data, 
-        accountId: selectedAccount 
-      })
-      
-      setReceiveMoneyDialogOpen(false)
-      resetReceive()
-      
-      // Refresh transactions and customer balances
-      const [transactionsResponse, balancesResponse] = await Promise.all([
-        getBankTransactions(selectedAccount),
-        getCustomerBalances()
-      ])
-      
-      setTransactions(transactionsResponse.transactions || [])
-      setCustomerBalances(balancesResponse.balances || [])
+    console.log("Sending payment with data:", {
+      accountId: selectedAccount,
+      amount: data.amount,
+      description: data.description,
+      paymentMethod: data.paymentMethod,
+      reference: data.reference,
+      [data.recipientType === 'customer' ? 'customerId' : 'supplierId']: data.recipientId
+    });
 
-      toast({
-        title: "Success",
-        description: response.message || "Payment received successfully",
-      })
-    } catch (error: any) {
-      console.error('Error receiving money:', error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to receive money",
-        variant: "destructive",
-      })
+    const response = await sendMoney({
+      accountId: selectedAccount,
+      amount: data.amount,
+      description: data.description,
+      paymentMethod: data.paymentMethod,
+      reference: data.reference || undefined,
+      [data.recipientType === 'customer' ? 'customerId' : 'supplierId']: data.recipientId
+    });
+
+    console.log("API Response:", response);
+
+    if (!response.success) {
+      throw new Error(response.message || "Payment failed");
     }
+
+    toast({
+      title: "Success",
+      description: "Payment sent successfully",
+    });
+    
+    setSendMoneyDialogOpen(false);
+    resetSend();
+    
+    // Refresh transactions
+    const transactionsResponse = await getBankTransactions(selectedAccount);
+    setTransactions(transactionsResponse.transactions || []);
+    
+  } catch (error: any) {
+    console.error("Payment Error:", error);
+    
+    toast({
+      title: "Error",
+      description: error.response?.data?.message || 
+                 error.message || 
+                 "Failed to process payment",
+      variant: "destructive",
+    });
   }
+};
+
+
+const onReceiveMoney = async (data: MoneyFormFields) => {
+  try {
+    const payload: any = {
+      accountId: selectedAccount,
+      amount: data.amount,
+      description: data.description,
+      paymentMethod: data.paymentMethod,
+      reference: data.reference,
+      transactionType: "deposit", // 👈 مهم
+      [data.recipientType === 'customer' ? 'customerId' : 'supplierId']: data.recipientId
+    };
+
+    const response = await receiveMoney(payload);
+
+    if (!response.success) {
+      throw new Error(response.message || "فشل الاستلام");
+    }
+
+    toast({ title: "Success", description: "تم استلام الأموال بنجاح" });
+    setReceiveMoneyDialogOpen(false);
+    resetReceive();
+
+    const transactionsResponse = await getBankTransactions(selectedAccount);
+    setTransactions(transactionsResponse.transactions || []);
+
+  } catch (error: any) {
+    toast({
+      title: "Error",
+      description: error.message || "حدث خطأ غير متوقع",
+      variant: "destructive"
+    });
+  }
+};
+
+
 
   const onCreateAccount = async (data: any) => {
     try {
@@ -270,6 +293,7 @@ export function Banking() {
       // Refresh accounts
       const accountsResponse = await getBankAccounts()
       setAccounts(accountsResponse.accounts || [])
+      console.log(`accountsResponse.accounts`, accountsResponse.accounts)
       
       // Select the newly created account if it's the first one
       if (accountsResponse.accounts?.length === 1) {
@@ -351,28 +375,51 @@ export function Banking() {
             <DialogContent className="bg-white/95 backdrop-blur-xl">
               <DialogHeader>
                 <DialogTitle>Record Received Payment</DialogTitle>
-                <DialogDescription>Record a payment received from a customer</DialogDescription>
+                <DialogDescription>Record a payment received from a customer or supplier</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleReceiveSubmit(onReceiveMoney)} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="customerId">Customer *</Label>
+                  <Label htmlFor="recipientType">From *</Label>
                   <Select 
-                    onValueChange={(value) => setReceiveValue('customerId', value)}
+                    onValueChange={(value) => setReceiveValue('recipientType', value as any)}
+                    defaultValue="customer"
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select recipient type" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white/95 backdrop-blur-xl">
+                      <SelectItem value="customer">Customer</SelectItem>
+                      <SelectItem value="supplier">Supplier</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="recipientId">{receiveRecipientType === 'customer' ? 'Customer' : 'Supplier'} *</Label>
+                  <Select 
+                    onValueChange={(value) => setReceiveValue('recipientId', value)}
                     defaultValue=""
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select customer" />
+                      <SelectValue placeholder={`Select ${receiveRecipientType}`} />
                     </SelectTrigger>
                     <SelectContent className="bg-white/95 backdrop-blur-xl">
-                      {clients.map((client) => (
-                        <SelectItem key={client._id} value={client._id}>
-                          {client.companyName || client.name}
-                        </SelectItem>
-                      ))}
+                      {receiveRecipientType === 'customer' ? (
+                        clients.map((client) => (
+                          <SelectItem key={client._id} value={client._id}>
+                            {client.companyName || client.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        suppliers.map((supplier) => (
+                          <SelectItem key={supplier._id} value={supplier._id}>
+                            {supplier.supplierName}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
-                  {receiveErrors.customerId && (
-                    <p className="text-sm text-red-600">Please select a customer</p>
+                  {receiveErrors.recipientId && (
+                    <p className="text-sm text-red-600">Please select a {receiveRecipientType}</p>
                   )}
                 </div>
                 <div className="space-y-2">
@@ -402,9 +449,10 @@ export function Banking() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="paymentMethod">Payment Method</Label>
+                  <Label htmlFor="paymentMethod">Payment Method *</Label>
                   <Select 
                     onValueChange={(value) => setReceiveValue('paymentMethod', value as any)}
+                    defaultValue="bank_transfer"
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select payment method" />
@@ -466,16 +514,16 @@ export function Banking() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="recipientId">Recipient *</Label>
+                  <Label htmlFor="recipientId">{sendRecipientType === 'customer' ? 'Customer' : 'Supplier'} *</Label>
                   <Select 
                     onValueChange={(value) => setSendValue('recipientId', value)}
                     defaultValue=""
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={`Select ${recipientType}`} />
+                      <SelectValue placeholder={`Select ${sendRecipientType}`} />
                     </SelectTrigger>
                     <SelectContent className="bg-white/95 backdrop-blur-xl">
-                      {recipientType === 'customer' ? (
+                      {sendRecipientType === 'customer' ? (
                         clients.map((client) => (
                           <SelectItem key={client._id} value={client._id}>
                             {client.companyName || client.name}
@@ -521,9 +569,10 @@ export function Banking() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="paymentMethod">Payment Method</Label>
+                  <Label htmlFor="paymentMethod">Payment Method *</Label>
                   <Select 
                     onValueChange={(value) => setSendValue('paymentMethod', value as any)}
+                    defaultValue="bank_transfer"
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select payment method" />
@@ -533,6 +582,7 @@ export function Banking() {
                       <SelectItem value="wire">Wire Transfer</SelectItem>
                       <SelectItem value="ach">ACH</SelectItem>
                       <SelectItem value="check">Check</SelectItem>
+                      <SelectItem value="cash">Cash</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -725,7 +775,6 @@ export function Banking() {
         </Dialog>
       </div>
 
-      {/* Rest of the component remains the same */}
       {/* Main Content Tabs */}
       <Tabs defaultValue="transactions" className="space-y-4">
         <TabsList className="grid w-full grid-cols-3">
@@ -897,7 +946,7 @@ export function Banking() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Supplier</TableHead>
-                      <TableHead className="text-right">Total Invoiced</TableHead>
+                      <TableHead className="text-right">Total Purchased</TableHead>
                       <TableHead className="text-right">Total Paid</TableHead>
                       <TableHead className="text-right">Outstanding Balance</TableHead>
                       <TableHead>Last Payment</TableHead>
@@ -915,7 +964,7 @@ export function Banking() {
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(balance.totalInvoiced, 'USD')}
+                            {formatCurrency(balance.totalPurchased, 'USD')}
                           </TableCell>
                           <TableCell className="text-right text-green-600">
                             {formatCurrency(balance.totalPaid, 'USD')}

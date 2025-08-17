@@ -14,7 +14,6 @@ export interface BankAccount {
   balance: number;
   currency: string;
   isActive: boolean;
-  openingDate: string;
   description?: string;
   createdAt: string;
   updatedAt: string;
@@ -28,15 +27,24 @@ export interface BankTransaction {
   balance: number;
   description: string;
   reference?: string;
-  paymentMethod: 'bank_transfer' | 'wire' | 'ach' | 'check' | 'cash';
+  paymentMethod: 'bank_transfer' | 'wire' | 'ach' | 'check' | 'cash' | 'card';
   transactionDate: string;
-  status: 'pending' | 'completed' | 'failed' | 'cancelled';
-  recipientType?: 'customer' | 'supplier' | 'internal';
-  recipientId?: string;
+  status: 'pending' | 'completed' | 'failed' | 'cancelled' | 'reversed';
   customerId?: string;
   supplierId?: string;
   createdAt: string;
   updatedAt: string;
+  account?: {
+    accountName: string;
+    bankName: string;
+    accountNumber: string;
+  };
+  customer?: {
+    companyName: string;
+  };
+  supplier?: {
+    supplierName: string;
+  };
 }
 
 export interface CustomerBalance {
@@ -48,6 +56,7 @@ export interface CustomerBalance {
   outstandingBalance: number;
   lastPaymentDate?: string;
   lastPaymentAmount?: number;
+  paymentTerms: string;
   lastUpdated: string;
   createdAt: string;
   updatedAt: string;
@@ -62,6 +71,7 @@ export interface SupplierBalance {
   outstandingBalance: number;
   lastPaymentDate?: string;
   lastPaymentAmount?: number;
+  paymentTerms: string;
   lastUpdated: string;
   createdAt: string;
   updatedAt: string;
@@ -87,31 +97,19 @@ export interface UpdateBankAccountData {
   description?: string;
 }
 
-export interface SendMoneyData {
+export interface MoneyTransactionData {
   accountId: string;
-  recipientType: 'customer' | 'supplier';
-  recipientId: string;
   amount: number;
   description: string;
-  paymentMethod?: 'bank_transfer' | 'wire' | 'ach' | 'check';
+  paymentMethod?: 'bank_transfer' | 'wire' | 'ach' | 'check' | 'cash' | 'card';
   reference?: string;
-}
-
-export interface ReceiveMoneyData {
-  accountId: string;
-  customerId: string;
-  amount: number;
-  description: string;
-  paymentMethod?: 'bank_transfer' | 'wire' | 'ach' | 'check' | 'cash';
-  reference?: string;
+  customerId?: string;
+  supplierId?: string;
 }
 
 // ========== API FUNCTIONS ==========
 
-// Description: Get all bank accounts
-// Endpoint: GET /api/banking/accounts
-// Request: {}
-// Response: { success: boolean, accounts: BankAccount[] }
+// Bank Accounts
 export const getBankAccounts = async () => {
   try {
     const response = await api.get('/api/banking/accounts');
@@ -121,10 +119,6 @@ export const getBankAccounts = async () => {
   }
 };
 
-// Description: Get bank account by ID
-// Endpoint: GET /api/banking/accounts/:id
-// Request: {}
-// Response: { success: boolean, account: BankAccount }
 export const getBankAccountById = async (accountId: string) => {
   try {
     const response = await api.get(`/api/banking/accounts/${accountId}`);
@@ -134,10 +128,6 @@ export const getBankAccountById = async (accountId: string) => {
   }
 };
 
-// Description: Create new bank account
-// Endpoint: POST /api/banking/accounts
-// Request: CreateBankAccountData
-// Response: { success: boolean, account: BankAccount, message: string }
 export const createBankAccount = async (data: CreateBankAccountData) => {
   try {
     const response = await api.post('/api/banking/accounts', data);
@@ -147,10 +137,6 @@ export const createBankAccount = async (data: CreateBankAccountData) => {
   }
 };
 
-// Description: Update bank account
-// Endpoint: PUT /api/banking/accounts/:id
-// Request: UpdateBankAccountData
-// Response: { success: boolean, account: BankAccount, message: string }
 export const updateBankAccount = async (accountId: string, data: UpdateBankAccountData) => {
   try {
     const response = await api.put(`/api/banking/accounts/${accountId}`, data);
@@ -160,10 +146,6 @@ export const updateBankAccount = async (accountId: string, data: UpdateBankAccou
   }
 };
 
-// Description: Deactivate bank account
-// Endpoint: DELETE /api/banking/accounts/:id
-// Request: {}
-// Response: { success: boolean, message: string, account: BankAccount }
 export const deactivateBankAccount = async (accountId: string) => {
   try {
     const response = await api.delete(`/api/banking/accounts/${accountId}`);
@@ -173,10 +155,7 @@ export const deactivateBankAccount = async (accountId: string) => {
   }
 };
 
-// Description: Get bank account transactions
-// Endpoint: GET /api/banking/accounts/:id/transactions
-// Request: { limit?: number, offset?: number }
-// Response: { success: boolean, transactions: BankTransaction[] }
+// Transactions
 export const getBankTransactions = async (accountId: string, limit: number = 100, offset: number = 0) => {
   try {
     const response = await api.get(`/api/banking/accounts/${accountId}/transactions`, {
@@ -188,11 +167,7 @@ export const getBankTransactions = async (accountId: string, limit: number = 100
   }
 };
 
-// Description: Send money to recipient
-// Endpoint: POST /api/banking/send-money
-// Request: SendMoneyData
-// Response: { success: boolean, transaction: BankTransaction, message: string }
-export const sendMoney = async (data: SendMoneyData) => {
+export const sendMoney = async (data: MoneyTransactionData) => {
   try {
     const response = await api.post('/api/banking/send-money', data);
     return response.data;
@@ -201,11 +176,7 @@ export const sendMoney = async (data: SendMoneyData) => {
   }
 };
 
-// Description: Receive money from customer
-// Endpoint: POST /api/banking/receive-money
-// Request: ReceiveMoneyData
-// Response: { success: boolean, transaction: BankTransaction, message: string }
-export const receiveMoney = async (data: ReceiveMoneyData) => {
+export const receiveMoney = async (data: MoneyTransactionData) => {
   try {
     const response = await api.post('/api/banking/receive-money', data);
     return response.data;
@@ -214,10 +185,7 @@ export const receiveMoney = async (data: ReceiveMoneyData) => {
   }
 };
 
-// Description: Get customer balances
-// Endpoint: GET /api/banking/customer-balances
-// Request: {}
-// Response: { success: boolean, balances: CustomerBalance[] }
+// Balances
 export const getCustomerBalances = async () => {
   try {
     const response = await api.get('/api/banking/customer-balances');
@@ -227,10 +195,6 @@ export const getCustomerBalances = async () => {
   }
 };
 
-// Description: Get supplier balances
-// Endpoint: GET /api/banking/supplier-balances
-// Request: {}
-// Response: { success: boolean, balances: SupplierBalance[] }
 export const getSupplierBalances = async () => {
   try {
     const response = await api.get('/api/banking/supplier-balances');
@@ -240,10 +204,6 @@ export const getSupplierBalances = async () => {
   }
 };
 
-// Description: Update customer balance
-// Endpoint: PUT /api/banking/customer-balances/:id
-// Request: { outstandingChange?: number, paymentAmount?: number }
-// Response: { success: boolean, balance: CustomerBalance, message: string }
 export const updateCustomerBalance = async (
   customerId: string,
   outstandingChange: number = 0,
@@ -260,10 +220,6 @@ export const updateCustomerBalance = async (
   }
 };
 
-// Description: Update supplier balance
-// Endpoint: PUT /api/banking/supplier-balances/:id
-// Request: { outstandingChange?: number, paymentAmount?: number }
-// Response: { success: boolean, balance: SupplierBalance, message: string }
 export const updateSupplierBalance = async (
   supplierId: string,
   outstandingChange: number = 0,
@@ -280,10 +236,6 @@ export const updateSupplierBalance = async (
   }
 };
 
-// Description: Sync all balances
-// Endpoint: POST /api/banking/sync-balances
-// Request: {}
-// Response: { success: boolean, message: string }
 export const syncBalances = async () => {
   try {
     const response = await api.post('/api/banking/sync-balances');
@@ -318,21 +270,42 @@ export const getTransactionTypeColor = (type: string): string => {
     case 'transfer':
       return 'text-blue-600';
     default:
-      return 'text-slate-600';
+      return 'text-gray-600';
   }
 };
 
 export const getStatusColor = (status: string): string => {
   switch (status) {
     case 'completed':
-      return 'bg-green-100 text-green-800 border-green-200';
+      return 'bg-green-100 text-green-800';
     case 'pending':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      return 'bg-yellow-100 text-yellow-800';
     case 'failed':
-      return 'bg-red-100 text-red-800 border-red-200';
+      return 'bg-red-100 text-red-800';
     case 'cancelled':
-      return 'bg-gray-100 text-gray-800 border-gray-200';
+      return 'bg-gray-100 text-gray-800';
+    case 'reversed':
+      return 'bg-purple-100 text-purple-800';
     default:
-      return 'bg-gray-100 text-gray-800 border-gray-200';
+      return 'bg-gray-100 text-gray-800';
+  }
+};
+
+export const getPaymentMethodIcon = (method: string) => {
+  switch (method) {
+    case 'bank_transfer':
+      return <Landmark className="w-4 h-4 text-blue-500" />;
+    case 'wire':
+      return <ArrowUpRight className="w-4 h-4 text-green-500" />;
+    case 'ach':
+      return <Banknote className="w-4 h-4 text-purple-500" />;
+    case 'check':
+      return <CreditCard className="w-4 h-4 text-orange-500" />;
+    case 'cash':
+      return <DollarSign className="w-4 h-4 text-green-600" />;
+    case 'card':
+      return <CreditCard className="w-4 h-4 text-blue-600" />;
+    default:
+      return <DollarSign className="w-4 h-4 text-gray-500" />;
   }
 };

@@ -138,3 +138,18 @@ export const getSupplierStatement = async (supplierId: string) => {
     throw new Error(error?.response?.data?.message || error.message);
   }
 };
+
+
+export const getSupplierTransactions = async (id: string) => {
+  const res = await api.get(`api/banking/suppliers/${id}/transactions`);
+  return res.data;
+};
+
+export const getSupplierPurchases = async (supplierId: string) => {
+  try {
+    const response = await api.get(`/api/suppliers/${supplierId}/purchases`);
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || error.message);
+  }
+};

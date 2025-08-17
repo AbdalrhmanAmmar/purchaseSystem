@@ -21,140 +21,113 @@ import {
   CreditCard,
   Receipt,
   Search,
-  Trash2
+  Trash2,
+  Package,
+  List
 } from "lucide-react"
-import { getSupplierById } from '@/api/suppliers'
+import { getSupplierById, getSupplierTransactions, getSupplierPurchases } from '@/api/suppliers'
 import { useToast } from '@/hooks/useToast'
 
-// Static data
-const staticSupplierData = {
-  supplier: {
-    supplierName: "Tech Supplies Inc.",
-    Balance: 1500,
-    PurchaseBalance: 8500,
-    _id: "689be3242c5eee8345643315",
-    createdAt: "2025-08-13T00:58:12.065Z",
-    updatedAt: "2025-08-15T10:22:45.120Z"
-  },
-  totalPurchased: 12500,
-  totalPaid: 11000,
-  outstandingBalance: 1500,
-  transactions: [
-    {
-      _id: "1",
-      date: "2025-08-10T09:15:00.000Z",
-      type: "purchase_order",
-      description: "Laptop order - 50 units",
-      reference: "PO-2025-0810",
-      amount: 5000,
-      status: "completed"
-    },
-    {
-      _id: "2",
-      date: "2025-08-12T14:30:00.000Z",
-      type: "payment",
-      description: "Payment for invoice #INV-2025-0810",
-      reference: "PAY-2025-0812",
-      amount: -3000,
-      status: "confirmed"
-    },
-    {
-      _id: "3",
-      date: "2025-08-14T11:45:00.000Z",
-      type: "purchase_order",
-      description: "Monitor order - 30 units",
-      reference: "PO-2025-0814",
-      amount: 3500,
-      status: "pending"
-    }
-  ],
-  purchaseOrders: [
-    {
-      _id: "PO-2025-0810",
-      orderId: "PO-2025-0810",
-      projectName: "Office Equipment Upgrade",
-      status: "completed",
-      totalAmount: 5000,
-      paymentTerms: "Net 30",
-      deliveryDate: "2025-08-18T00:00:00.000Z"
-    },
-    {
-      _id: "PO-2025-0814",
-      orderId: "PO-2025-0814",
-      projectName: "Conference Room Setup",
-      status: "pending",
-      totalAmount: 3500,
-      paymentTerms: "Net 15",
-      deliveryDate: "2025-08-20T00:00:00.000Z"
-    }
-  ],
-  shipments: [
-    {
-      _id: "SH-2025-0810",
-      orderId: "PO-2025-0810",
-      trackingNumber: "TRK123456789",
-      shippingCompany: "Fast Delivery Inc.",
-      status: "delivered",
-      expectedDelivery: "2025-08-18T00:00:00.000Z",
-      totalCost: 250
-    },
-    {
-      _id: "SH-2025-0814",
-      orderId: "PO-2025-0814",
-      trackingNumber: "TRK987654321",
-      shippingCompany: "Quick Ship LLC",
-      status: "in_transit",
-      expectedDelivery: "2025-08-20T00:00:00.000Z",
-      totalCost: 180
-    }
-  ]
+interface ISupplier {
+  supplierName: string
+  Balance: number
+  PurchaseBalance: number
+  purchaseOrders?: string[]
 }
 
-interface ISupplier{
-  supplierName:string,
-  Balance:number,
-  PurchaseBalance:number
+interface ITransaction {
+  _id: string
+  transactionDate: string
+  transactionType: string
+  description: string
+  reference?: string
+  amount: number
+  status: string
+}
+
+interface IPurchaseItem {
+  description: string
+  quantity: number
+  unitPrice: number
+  total: number
+  photo?: string
+}
+
+interface IPurchaseOrder {
+  _id: string
+  orderId: {
+    _id: string
+    projectName?: string
+    clientName?: string
+  }
+  supplierId: string
+  supplierName: string
+  items: IPurchaseItem[]
+  paymentTerms: string
+  deliveryDate: string
+  totalAmount: number
+  paidAmount: number
+  remainingAmount: number
+  payments: {
+    paymentType: string
+    amount: number
+    paymentDate: string
+    paymentMethod: string
+    status: string
+  }[]
+  status: 'draft' | 'sent' | 'confirmed' | 'received'
+  createdAt: string
+  updatedAt: string
 }
 
 export function SupplierDetail() {
-  const {id} = useParams()
+  const { id } = useParams()
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
   const [deleting, setDeleting] = useState(false)
-  const [supplierdata, setsupplierdata] = useState<ISupplier>({});
-const [loading, setLoading] = useState(true);
-const { toast } = useToast();
+  const [supplierdata, setSupplierData] = useState<ISupplier>({
+    supplierName: '',
+    Balance: 0,
+    PurchaseBalance: 0
+  })
+  const [transactions, setTransactions] = useState<ITransaction[]>([])
+  const [purchases, setPurchases] = useState<IPurchaseOrder[]>([])
+  const [loading, setLoading] = useState(true)
+  const { toast } = useToast()
   const navigate = useNavigate()
 
-  // Use static data instead of API call
-  const statement = staticSupplierData
+  useEffect(() => {
+    const fetchSupplierData = async () => {
+      try {
+        setLoading(true)
+        
+        // Fetch supplier basic info
+        const supplierRes = await getSupplierById(id)
+        if (!supplierRes.success) throw new Error("Failed to fetch supplier data")
+        setSupplierData(supplierRes.supplier)
 
-useEffect(() => {
-  const fetchSupplier = async () => {
-    try {
-      const response = await getSupplierById(id);
-      console.log('API Response:', response);
-      
-      if (response.success) {
-        setsupplierdata(response.supplier);
-      } else {
-        throw new Error("Failed to fetch supplier data");
+        // Fetch transactions
+        const txRes = await getSupplierTransactions(id)
+        if (txRes.success) setTransactions(txRes.transactions)
+
+        // Fetch purchases
+        const purchasesRes = await getSupplierPurchases(id)
+        if (purchasesRes.success) setPurchases(purchasesRes.purchases)
+
+      } catch (error) {
+        console.error('Error fetching supplier data:', error)
+        toast({
+          title: "Error",
+          description: "Failed to load supplier data",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
       }
-    } catch (error) {
-      console.error('Error fetching supplier:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load supplier data",
-        variant: "destructive",
-      });
     }
-  };
 
-  if (id) {
-    fetchSupplier();
-  }
-}, [id, toast]);
-  
+    if (id) fetchSupplierData()
+  }, [id, toast])
 
   const handleDeleteSupplier = async () => {
     setDeleting(true)
@@ -200,24 +173,24 @@ useEffect(() => {
     }
   }
 
-  const filteredTransactions = statement.transactions.filter(transaction => {
-    const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredTransactions = transactions.filter(transaction => {
+    const matchesSearch = transaction.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (transaction.reference && transaction.reference.toLowerCase().includes(searchTerm.toLowerCase()))
-    const matchesType = filterType === 'all' || transaction.type === filterType
+    const matchesType = filterType === 'all' || transaction.transactionType === filterType
     return matchesSearch && matchesType
   })
 
-  const filteredPurchaseOrders = statement.purchaseOrders.filter(po => {
-    const matchesSearch = po.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         po._id.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredPurchases = purchases.filter(purchase => {
+    const matchesSearch = purchase.orderId?.projectName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         purchase._id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         purchase.items.some(item => 
+                           item.description.toLowerCase().includes(searchTerm.toLowerCase()))
     return matchesSearch
   })
 
-  const filteredShipments = statement.shipments.filter(shipment => {
-    const matchesSearch = shipment.trackingNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         shipment.shippingCompany.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSearch
-  })
+  const outstandingBalance = supplierdata.PurchaseBalance - supplierdata.Balance
+
+  if (loading) return <div className="flex justify-center items-center h-64">Loading supplier data...</div>
 
   return (
     <div className="space-y-6">
@@ -283,7 +256,7 @@ useEffect(() => {
             <ShoppingCart className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-slate-900">${supplierdata.PurchaseBalance}</div>
+            <div className="text-2xl font-bold text-slate-900">${supplierdata.PurchaseBalance.toLocaleString()}</div>
             <p className="text-xs text-slate-500 mt-1">All time</p>
           </CardContent>
         </Card>
@@ -294,7 +267,7 @@ useEffect(() => {
             <CreditCard className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">${supplierdata.Balance}</div>
+            <div className="text-2xl font-bold text-green-600">${supplierdata.Balance.toLocaleString()}</div>
             <p className="text-xs text-slate-500 mt-1">Payments made</p>
           </CardContent>
         </Card>
@@ -302,28 +275,28 @@ useEffect(() => {
         <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50 hover:shadow-lg transition-all duration-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-slate-600">Outstanding Balance</CardTitle>
-            <DollarSign className={`h-4 w-4 ${statement.outstandingBalance > 0 ? 'text-red-500' : 'text-green-500'}`} />
+            <DollarSign className={`h-4 w-4 ${outstandingBalance > 0 ? 'text-red-500' : 'text-green-500'}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${statement.outstandingBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              ${Math.abs(supplierdata.PurchaseBalance - supplierdata.Balance)}
+            <div className={`text-2xl font-bold ${outstandingBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+              ${Math.abs(outstandingBalance).toLocaleString()}
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              {statement.outstandingBalance > 0 ? 'Amount owed' : 'Credit balance'}
+              {outstandingBalance > 0 ? 'Amount owed' : 'Credit balance'}
             </p>
           </CardContent>
         </Card>
 
         <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50 hover:shadow-lg transition-all duration-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Active Orders</CardTitle>
-            <FileText className="h-4 w-4 text-purple-500" />
+            <CardTitle className="text-sm font-medium text-slate-600">Purchase Orders</CardTitle>
+            <Package className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-slate-900">
-              {statement.purchaseOrders.filter(po => po.status !== 'received' && po.status !== 'cancelled').length}
+              {purchases.length}
             </div>
-            <p className="text-xs text-slate-500 mt-1">In progress</p>
+            <p className="text-xs text-slate-500 mt-1">Total orders</p>
           </CardContent>
         </Card>
       </div>
@@ -335,7 +308,7 @@ useEffect(() => {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
               <Input
-                placeholder="Search transactions, orders, or shipments..."
+                placeholder="Search transactions, purchases, or items..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -346,15 +319,84 @@ useEffect(() => {
       </Card>
 
       {/* Detailed Information Tabs */}
-      <Tabs defaultValue="transactions" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="transactions">Transactions ({filteredTransactions.length})</TabsTrigger>
-          <TabsTrigger value="orders">Purchase Orders ({filteredPurchaseOrders.length})</TabsTrigger>
-          <TabsTrigger value="shipments">Shipments ({filteredShipments.length})</TabsTrigger>
+      <Tabs defaultValue="purchases" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="purchases">
+            <ShoppingCart className="w-4 h-4 mr-2" />
+            Purchases ({filteredPurchases.length})
+          </TabsTrigger>
+          <TabsTrigger value="transactions">
+            <Receipt className="w-4 h-4 mr-2" />
+            Transactions ({filteredTransactions.length})
+          </TabsTrigger>
         </TabsList>
 
+        {/* Purchases Tab */}
+        <TabsContent value="purchases" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-slate-900">Purchase Orders</CardTitle>
+              <CardDescription>All purchase orders from this supplier</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>PO Number</TableHead>
+                      <TableHead>Project</TableHead>
+                      <TableHead>Items</TableHead>
+                      <TableHead>Delivery Date</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredPurchases.map((purchase) => (
+                      <TableRow key={purchase._id}>
+                        <TableCell className="font-medium">PO-{String(purchase.PurchaseItem).padStart(3, '0')}</TableCell>
+                        <TableCell>
+                          {purchase.orderId?.projectName || 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center">
+                            <List className="w-4 h-4 mr-1" />
+                            {purchase.items.length} items
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {new Date(purchase.deliveryDate).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          ${purchase.totalAmount.toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getStatusBadge(purchase.status)}>
+                            {purchase.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => navigate(`/purchase-orders/${purchase._id}`)}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Transactions Tab */}
         <TabsContent value="transactions" className="space-y-4">
-          <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
+          <Card>
             <CardHeader>
               <CardTitle className="text-slate-900">Transaction History</CardTitle>
               <CardDescription>All financial transactions with this supplier</CardDescription>
@@ -373,144 +415,20 @@ useEffect(() => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTransactions.map((transaction) => (
-                      <TableRow key={transaction._id} className="hover:bg-slate-50/50">
-                        <TableCell>{new Date(transaction.date).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            {getTransactionIcon(transaction.type)}
-                            <span className="capitalize">{transaction.type.replace('_', ' ')}</span>
-                          </div>
+                    {filteredTransactions.map((tx) => (
+                      <TableRow key={tx._id}>
+                        <TableCell>{new Date(tx.transactionDate).toLocaleDateString()}</TableCell>
+                        <TableCell className="flex items-center space-x-2">
+                          {getTransactionIcon(tx.transactionType)}
+                          <span>{tx.transactionType}</span>
                         </TableCell>
-                        <TableCell className="max-w-xs truncate">{transaction.description}</TableCell>
-                        <TableCell>{transaction.reference || '-'}</TableCell>
-                        <TableCell className={`text-right font-medium ${
-                          transaction.amount > 0 ? 'text-red-600' : 'text-green-600'
-                        }`}>
-                          {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toLocaleString()}
+                        <TableCell>{tx.description}</TableCell>
+                        <TableCell>{tx.reference || '-'}</TableCell>
+                        <TableCell className={`text-right font-medium ${tx.transactionType === 'payment' ? 'text-green-600' : 'text-red-600'}`}>
+                          ${tx.amount.toLocaleString()}
                         </TableCell>
                         <TableCell>
-                          <Badge className={getStatusBadge(transaction.status)}>
-                            {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="orders" className="space-y-4">
-          <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
-            <CardHeader>
-              <CardTitle className="text-slate-900">Purchase Orders</CardTitle>
-              <CardDescription>All purchase orders placed with this supplier</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>PO ID</TableHead>
-                      <TableHead>Project Name</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Total Amount</TableHead>
-                      <TableHead>Payment Terms</TableHead>
-                      <TableHead>Delivery Date</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredPurchaseOrders.map((order) => (
-                      <TableRow key={order._id} className="hover:bg-slate-50/50">
-                        <TableCell className="font-medium">#{order._id}</TableCell>
-                        <TableCell>{order.projectName}</TableCell>
-                        <TableCell>
-                          <Badge className={getStatusBadge(order.status)}>
-                            {order.status.replace('_', ' ')}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          ${order.totalAmount.toLocaleString()}
-                        </TableCell>
-                        <TableCell>{order.paymentTerms}</TableCell>
-                        <TableCell>{new Date(order.deliveryDate).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => navigate(`/orders/${order.orderId}`)}
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            View
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="shipments" className="space-y-4">
-          <Card className="bg-white/80 backdrop-blur-sm border-slate-200/50">
-            <CardHeader>
-              <CardTitle className="text-slate-900">Shipments</CardTitle>
-              <CardDescription>All shipments from this supplier</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Shipment ID</TableHead>
-                      <TableHead>Order ID</TableHead>
-                      <TableHead>Tracking Number</TableHead>
-                      <TableHead>Shipping Company</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Expected Delivery</TableHead>
-                      <TableHead className="text-right">Cost</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredShipments.map((shipment) => (
-                      <TableRow key={shipment._id} className="hover:bg-slate-50/50">
-                        <TableCell className="font-medium">#{shipment._id}</TableCell>
-                        <TableCell>
-                          <Button
-                            variant="link"
-                            className="p-0 h-auto text-blue-600 hover:text-blue-700"
-                            onClick={() => navigate(`/orders/${shipment.orderId}`)}
-                          >
-                            #{shipment.orderId}
-                          </Button>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">{shipment.trackingNumber}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Truck className="w-4 h-4 text-slate-500" />
-                            <span>{shipment.shippingCompany}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getStatusBadge(shipment.status)}>
-                            {shipment.status.replace('_', ' ')}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Calendar className="w-4 h-4 text-slate-500" />
-                            <span>{new Date(shipment.expectedDelivery).toLocaleDateString()}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          ${shipment.totalCost.toLocaleString()}
+                          <Badge className={getStatusBadge(tx.status)}>{tx.status}</Badge>
                         </TableCell>
                       </TableRow>
                     ))}

@@ -209,7 +209,7 @@ export function Orders() {
                 <div className="flex-1">
                   <div className="flex items-center space-x-4">
                     <div>
-                      <CardTitle className="text-lg text-slate-900">#{order._id} - {order.projectName}</CardTitle>
+                      <CardTitle className="text-lg text-slate-900">#{String(order.orderItem).padStart(3, '0')} - {order.projectName}</CardTitle>
                       <CardDescription className="flex items-center space-x-4 mt-1">
                         <span>{order.clientName}</span>
                         <Badge className={getStatusBadge(order.status)}>
