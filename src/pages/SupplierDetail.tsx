@@ -5,6 +5,9 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { useNavigate, useParams } from "react-router-dom"
 import {
@@ -23,12 +26,20 @@ import {
   Search,
   Trash2,
   Package,
-  List
+  List,
+  ArrowDownLeft,
+  Send,
+  ArrowUpRight,
+  Plus
 } from "lucide-react"
 import { getSupplierById, getSupplierTransactions, getSupplierPurchases } from '@/api/suppliers'
 import { useToast } from '@/hooks/useToast'
+import { useForm } from 'react-hook-form'
+import { sendMoney, receiveMoney } from '@/api/banking'
+import { getBankAccounts, BankAccount } from '@/api/banking'
 
 interface ISupplier {
+  _id: string
   supplierName: string
   Balance: number
   PurchaseBalance: number
@@ -80,12 +91,21 @@ interface IPurchaseOrder {
   updatedAt: string
 }
 
+type MoneyFormFields = {
+  accountId: string;
+  amount: number;
+  description: string;
+  paymentMethod: 'bank_transfer' | 'wire' | 'ach' | 'check' | 'cash';
+  reference?: string;
+};
+
 export function SupplierDetail() {
   const { id } = useParams()
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
   const [deleting, setDeleting] = useState(false)
-  const [supplierdata, setSupplierData] = useState<ISupplier>({
+  const [supplierData, setSupplierData] = useState<ISupplier>({
+    _id: '',
     supplierName: '',
     Balance: 0,
     PurchaseBalance: 0
@@ -93,8 +113,39 @@ export function SupplierDetail() {
   const [transactions, setTransactions] = useState<ITransaction[]>([])
   const [purchases, setPurchases] = useState<IPurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
+  const [sendMoneyDialogOpen, setSendMoneyDialogOpen] = useState(false)
+  const [receiveMoneyDialogOpen, setReceiveMoneyDialogOpen] = useState(false)
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [selectedAccount, setSelectedAccount] = useState<string>('')
+  
   const { toast } = useToast()
   const navigate = useNavigate()
+
+  // Form handling for send money
+  const { 
+    register: registerSend, 
+    handleSubmit: handleSendSubmit, 
+    formState: { errors: sendErrors }, 
+    reset: resetSend,
+    setValue: setSendValue
+  } = useForm<MoneyFormFields>({
+    defaultValues: {
+      paymentMethod: 'bank_transfer'
+    }
+  })
+
+  // Form handling for receive money
+  const { 
+    register: registerReceive, 
+    handleSubmit: handleReceiveSubmit, 
+    formState: { errors: receiveErrors }, 
+    reset: resetReceive,
+    setValue: setReceiveValue
+  } = useForm<MoneyFormFields>({
+    defaultValues: {
+      paymentMethod: 'bank_transfer'
+    }
+  })
 
   useEffect(() => {
     const fetchSupplierData = async () => {
@@ -102,23 +153,32 @@ export function SupplierDetail() {
         setLoading(true)
         
         // Fetch supplier basic info
-        const supplierRes = await getSupplierById(id)
+        const supplierRes = await getSupplierById(id!)
         if (!supplierRes.success) throw new Error("Failed to fetch supplier data")
         setSupplierData(supplierRes.supplier)
 
         // Fetch transactions
-        const txRes = await getSupplierTransactions(id)
+        const txRes = await getSupplierTransactions(id!)
         if (txRes.success) setTransactions(txRes.transactions)
 
         // Fetch purchases
-        const purchasesRes = await getSupplierPurchases(id)
+        const purchasesRes = await getSupplierPurchases(id!)
         if (purchasesRes.success) setPurchases(purchasesRes.purchases)
 
-      } catch (error) {
+        // Fetch bank accounts
+        const accountsRes = await getBankAccounts()
+        if (accountsRes.accounts) {
+          setBankAccounts(accountsRes.accounts)
+          if (accountsRes.accounts.length > 0) {
+            setSelectedAccount(accountsRes.accounts[0]._id)
+          }
+        }
+
+      } catch (error: any) {
         console.error('Error fetching supplier data:', error)
         toast({
           title: "Error",
-          description: "Failed to load supplier data",
+          description: error.message || "Failed to load supplier data",
           variant: "destructive",
         })
       } finally {
@@ -142,6 +202,94 @@ export function SupplierDetail() {
       setDeleting(false)
     }
   }
+
+  const onSendMoney = async (data: MoneyFormFields) => {
+    try {
+      if (!selectedAccount) {
+        throw new Error("Please select a bank account");
+      }
+
+      const response = await sendMoney({
+        accountId: selectedAccount,
+        amount: data.amount,
+        description: data.description,
+        paymentMethod: data.paymentMethod,
+        reference: data.reference || undefined,
+        supplierId: supplierData._id
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || "Payment failed");
+      }
+
+      toast({
+        title: "Success",
+        description: "Payment sent successfully",
+      });
+      
+      setSendMoneyDialogOpen(false);
+      resetSend();
+      
+      // Refresh transactions
+      const txRes = await getSupplierTransactions(id!)
+      if (txRes.success) setTransactions(txRes.transactions)
+      
+    } catch (error: any) {
+      console.error("Payment Error:", error);
+      
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || 
+                   error.message || 
+                   "Failed to process payment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const onReceiveMoney = async (data: MoneyFormFields) => {
+    try {
+      if (!selectedAccount) {
+        throw new Error("Please select a bank account");
+      }
+
+      const response = await receiveMoney({
+        accountId: selectedAccount,
+        amount: data.amount,
+        description: data.description,
+        paymentMethod: data.paymentMethod,
+        reference: data.reference || undefined,
+        supplierId: supplierData._id
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || "Payment failed");
+      }
+
+      toast({
+        title: "Success",
+        description: "Payment received successfully",
+      });
+      
+      setReceiveMoneyDialogOpen(false);
+      resetReceive();
+      
+      // Refresh transactions
+      const txRes = await getSupplierTransactions(id!)
+      if (txRes.success) setTransactions(txRes.transactions)
+      
+    } catch (error: any) {
+      console.error("Payment Error:", error);
+      
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || 
+                   error.message || 
+                   "Failed to process payment",
+        variant: "destructive",
+      });
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     const variants = {
@@ -188,7 +336,7 @@ export function SupplierDetail() {
     return matchesSearch
   })
 
-  const outstandingBalance = supplierdata.PurchaseBalance - supplierdata.Balance
+  const outstandingBalance = supplierData.PurchaseBalance - supplierData.Balance
 
   if (loading) return <div className="flex justify-center items-center h-64">Loading supplier data...</div>
 
@@ -201,7 +349,7 @@ export function SupplierDetail() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{supplierdata.supplierName}</h1>
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{supplierData.supplierName}</h1>
             <p className="text-slate-600 dark:text-slate-400">Supplier Statement & Account Overview</p>
           </div>
         </div>
@@ -216,7 +364,7 @@ export function SupplierDetail() {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Supplier</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete "{supplierdata.supplierName}"? This action cannot be undone.
+                Are you sure you want to delete "{supplierData.supplierName}"? This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -241,8 +389,197 @@ export function SupplierDetail() {
               <Factory className="w-8 h-8 text-white" />
             </div>
             <div className="flex-1">
-              <CardTitle className="text-2xl text-slate-900">{supplierdata.supplierName}</CardTitle>
+              <CardTitle className="text-2xl text-slate-900">{supplierData.supplierName}</CardTitle>
               <CardDescription className="text-lg">Supplier Account</CardDescription>
+            </div>
+            <div className='flex gap-2'>
+              <Dialog open={sendMoneyDialogOpen} onOpenChange={setSendMoneyDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg">
+                    <Send className="w-4 h-4 mr-2" />
+                    revieve
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-white/95 backdrop-blur-xl">
+                  <DialogHeader>
+                    <DialogTitle>Send Money to Supplier</DialogTitle>
+                    <DialogDescription>Record a payment sent to this supplier</DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleSendSubmit(onSendMoney)} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="accountId">Bank Account *</Label>
+                      <Select 
+                        onValueChange={(value) => setSelectedAccount(value)}
+                        value={selectedAccount}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select bank account" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white/95 backdrop-blur-xl">
+                          {bankAccounts.map((account) => (
+                            <SelectItem key={account._id} value={account._id}>
+                              {account.accountName} - {account.bankName} ({account.accountNumber.slice(-4)})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="amount">Amount *</Label>
+                      <Input
+                        {...registerSend('amount', { 
+                          required: 'Amount is required', 
+                          min: { value: 0.01, message: 'Amount must be positive' },
+                          valueAsNumber: true
+                        })}
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                      />
+                      {sendErrors.amount && (
+                        <p className="text-sm text-red-600">{sendErrors.amount.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Description *</Label>
+                      <Input
+                        {...registerSend('description', { required: 'Description is required' })}
+                        placeholder="Payment description"
+                      />
+                      {sendErrors.description && (
+                        <p className="text-sm text-red-600">{sendErrors.description.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentMethod">Payment Method *</Label>
+                      <Select 
+                        onValueChange={(value) => setSendValue('paymentMethod', value as any)}
+                        defaultValue="bank_transfer"
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select payment method" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white/95 backdrop-blur-xl">
+                          <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                          <SelectItem value="wire">Wire Transfer</SelectItem>
+                          <SelectItem value="ach">ACH</SelectItem>
+                          <SelectItem value="check">Check</SelectItem>
+                          <SelectItem value="cash">Cash</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reference">Reference</Label>
+                      <Input
+                        {...registerSend('reference')}
+                        placeholder="Payment reference"
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setSendMoneyDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" className="bg-gradient-to-r from-blue-500 to-indigo-600">
+                        Send Payment
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={receiveMoneyDialogOpen} onOpenChange={setReceiveMoneyDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="border-green-500 text-green-600 hover:bg-green-50">
+                    <ArrowDownLeft className="w-4 h-4 mr-2" />
+                    send Money
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-white/95 backdrop-blur-xl">
+                  <DialogHeader>
+                    <DialogTitle>Receive Money from Supplier</DialogTitle>
+                    <DialogDescription>Record a payment received from this supplier</DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleReceiveSubmit(onReceiveMoney)} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="accountId">Bank Account *</Label>
+                      <Select 
+                        onValueChange={(value) => setSelectedAccount(value)}
+                        value={selectedAccount}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select bank account" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white/95 backdrop-blur-xl">
+                          {bankAccounts.map((account) => (
+                            <SelectItem key={account._id} value={account._id}>
+                              {account.accountName} - {account.bankName} ({account.accountNumber.slice(-4)})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="amount">Amount *</Label>
+                      <Input
+                        {...registerReceive('amount', { 
+                          required: 'Amount is required', 
+                          min: { value: 0.01, message: 'Amount must be positive' },
+                          valueAsNumber: true
+                        })}
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                      />
+                      {receiveErrors.amount && (
+                        <p className="text-sm text-red-600">{receiveErrors.amount.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Description *</Label>
+                      <Input
+                        {...registerReceive('description', { required: 'Description is required' })}
+                        placeholder="Payment description"
+                      />
+                      {receiveErrors.description && (
+                        <p className="text-sm text-red-600">{receiveErrors.description.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentMethod">Payment Method *</Label>
+                      <Select 
+                        onValueChange={(value) => setReceiveValue('paymentMethod', value as any)}
+                        defaultValue="bank_transfer"
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select payment method" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white/95 backdrop-blur-xl">
+                          <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                          <SelectItem value="wire">Wire Transfer</SelectItem>
+                          <SelectItem value="ach">ACH</SelectItem>
+                          <SelectItem value="check">Check</SelectItem>
+                          <SelectItem value="cash">Cash</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reference">Reference</Label>
+                      <Input
+                        {...registerReceive('reference')}
+                        placeholder="Payment reference"
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setReceiveMoneyDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" className="bg-gradient-to-r from-green-500 to-emerald-600">
+                        Record Payment
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
         </CardHeader>
@@ -256,7 +593,7 @@ export function SupplierDetail() {
             <ShoppingCart className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-slate-900">${supplierdata.PurchaseBalance.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-slate-900">${supplierData.PurchaseBalance.toLocaleString()}</div>
             <p className="text-xs text-slate-500 mt-1">All time</p>
           </CardContent>
         </Card>
@@ -267,7 +604,7 @@ export function SupplierDetail() {
             <CreditCard className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">${supplierdata.Balance.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-green-600">${supplierData.Balance.toLocaleString()}</div>
             <p className="text-xs text-slate-500 mt-1">Payments made</p>
           </CardContent>
         </Card>
@@ -355,7 +692,7 @@ export function SupplierDetail() {
                   <TableBody>
                     {filteredPurchases.map((purchase) => (
                       <TableRow key={purchase._id}>
-                        <TableCell className="font-medium">PO-{String(purchase.PurchaseItem).padStart(3, '0')}</TableCell>
+                        <TableCell className="font-medium">PO-{purchase._id.slice(-4)}</TableCell>
                         <TableCell>
                           {purchase.orderId?.projectName || 'N/A'}
                         </TableCell>
